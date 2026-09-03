@@ -44,6 +44,18 @@ Instale as dependências:
 python -m pip install -r requirements.txt
 ```
 
+Crie o arquivo `.env` a partir do exemplo e ajuste os dados do PostgreSQL:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Banco esperado para desenvolvimento:
+
+```sql
+CREATE DATABASE controle_estoque;
+```
+
 Verifique a instalação do Django:
 
 ```powershell
@@ -54,6 +66,12 @@ Rode a aplicação:
 
 ```powershell
 python manage.py runserver
+```
+
+Depois que o PostgreSQL estiver instalado, rodando e configurado no `.env`, rode as migrations:
+
+```powershell
+python manage.py migrate
 ```
 
 ## Decisão 01 — Organização por feature
@@ -86,8 +104,20 @@ Data: 02/09/2026
 
 Contexto: o projeto será desenvolvido em português e precisa manter um padrão de leitura consistente.
 
-Decisão: usar nomes em português e PascalCase em arquivos, funções e variáveis criados pelo projeto, exceto quando o Django exigir nomes próprios do framework.
+Decisão: usar nomes em português e PascalCase em arquivos, funções e variáveis criados pelo projeto, exceto quando o Django exigir nomes próprios do framework ou quando variáveis de ambiente seguirem convenção em maiúsculas.
 
-Consequências: o código fica alinhado ao vocabulário do trabalho; arquivos obrigatórios como `manage.py`, `settings.py`, `urls.py`, `asgi.py` e `wsgi.py` mantêm o padrão esperado pelo Django.
+Consequências: o código fica alinhado ao vocabulário do trabalho; arquivos obrigatórios como `manage.py`, `settings.py`, `urls.py`, `asgi.py` e `wsgi.py` mantêm o padrão esperado pelo Django, e variáveis como `POSTGRES_DB` mantêm o padrão comum de ambiente.
 
 Alternativa descartada: misturar inglês com português ou alternar entre snake_case, camelCase e PascalCase sem regra.
+
+## Decisão 04 — Banco de dados PostgreSQL
+
+Data: 02/09/2026
+
+Contexto: o projeto tende a crescer além de um exemplo pequeno de disciplina e precisa de um banco de dados mais próximo de um ambiente real.
+
+Decisão: usar PostgreSQL como banco de dados principal, configurado por variáveis de ambiente no arquivo `.env`.
+
+Consequências: o projeto ganha um banco mais robusto; será necessário ter PostgreSQL instalado e um banco criado antes de rodar migrations.
+
+Alternativa descartada: SQLite, por ser mais indicado para projetos pequenos, protótipos e configuração inicial simples.
