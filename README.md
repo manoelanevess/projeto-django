@@ -121,3 +121,39 @@ Decisão: usar PostgreSQL como banco de dados principal, configurado por variáv
 Consequências: o projeto ganha um banco mais robusto; será necessário ter PostgreSQL instalado e um banco criado antes de rodar migrations.
 
 Alternativa descartada: SQLite, por ser mais indicado para projetos pequenos, protótipos e configuração inicial simples.
+
+## Decisão 05 — Interface inicial em formato de dashboard
+
+Data: 09/09/2026
+
+Contexto: a aplicação precisa ter aparência de sistema administrativo de estoque, com leitura rápida dos dados principais.
+
+Decisão: a tela inicial seguirá uma referência visual de dashboard, com menu lateral, barra superior, cards de indicadores e atalhos para as features.
+
+Consequências: o primeiro acesso já comunica o objetivo do sistema; novas telas devem manter o mesmo padrão visual para parecerem parte do mesmo produto.
+
+Alternativa descartada: página inicial simples apenas com tabela de produtos, por não demonstrar bem a experiência final esperada.
+
+## Decisão 06 — Mapa de rotas versionado
+
+Data: 09/09/2026
+
+Contexto: a aula de roteamento reforçou que a URL deve representar o estado da aplicação e que filtros pertencem à query string.
+
+Decisão: manter o mapa de navegação em `ROTAS.md`, com rota, tela, parâmetro, proteção, query string e status de implementação.
+
+Consequências: novas telas passam a ter URL planejada antes do código; filtros como busca e estoque ficam compartilháveis por link.
+
+Alternativa descartada: criar rotas conforme a necessidade sem documentação prévia.
+
+## Decisão 07 — Layout compartilhado e rota 404
+
+Data: 09/09/2026
+
+Contexto: menu e topo não devem ser copiados em cada tela, e toda aplicação precisa responder bem quando a URL não existe.
+
+Decisão: criar um layout base em `src/componentes/LayoutBase.py` e uma página 404 compartilhada em `src/componentes/ComponenteErro.py`.
+
+Consequências: dashboard, produtos, estoque, fornecedores e login usam a mesma navegação; URLs inexistentes exibem uma tela de retorno para o dashboard.
+
+Alternativa descartada: repetir HTML e CSS de menu/topo dentro de cada feature.

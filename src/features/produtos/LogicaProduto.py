@@ -2,12 +2,46 @@
 from .ApiProduto import BuscarProdutosIniciais
 
 
-def GerarResumoProdutos():
+def FiltrarProdutos(Produtos, Busca="", Estoque=""):
+    ProdutosFiltrados = Produtos
+
+    if Busca:
+        TermoBusca = Busca.lower()
+        ProdutosFiltrados = [
+            Produto
+            for Produto in ProdutosFiltrados
+            if TermoBusca in Produto["Nome"].lower()
+            or TermoBusca in Produto["Categoria"].lower()
+        ]
+
+    if Estoque == "baixo":
+        ProdutosFiltrados = [
+            Produto
+            for Produto in ProdutosFiltrados
+            if Produto["Quantidade"] <= Produto["EstoqueMinimo"]
+        ]
+
+    return ProdutosFiltrados
+
+
+def GerarResumoProdutos(Busca="", Estoque=""):
     Produtos = BuscarProdutosIniciais()
-    TotalItens = sum(Produto["Quantidade"] for Produto in Produtos)
+    ProdutosFiltrados = FiltrarProdutos(Produtos, Busca, Estoque)
+    TotalItens = sum(Produto["Quantidade"] for Produto in ProdutosFiltrados)
+    ProdutosEstoqueBaixo = [
+        Produto
+        for Produto in ProdutosFiltrados
+        if Produto["Quantidade"] <= Produto["EstoqueMinimo"]
+    ]
+    CustoTotal = sum(
+        Produto["Quantidade"] * Produto["ValorUnitario"]
+        for Produto in ProdutosFiltrados
+    )
 
     return {
-        "Produtos": Produtos,
-        "TotalProdutos": len(Produtos),
+        "Produtos": ProdutosFiltrados,
+        "TotalProdutos": len(ProdutosFiltrados),
         "TotalItens": TotalItens,
+        "TotalEstoqueBaixo": len(ProdutosEstoqueBaixo),
+        "CustoTotal": CustoTotal,
     }
