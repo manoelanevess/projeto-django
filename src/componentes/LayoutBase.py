@@ -11,7 +11,6 @@ MenusNavegacao = [
         "Rota": "/fornecedores",
         "Sigla": "FO",
     },
-    {"Chave": "login", "Nome": "Login", "Rota": "/login", "Sigla": "LG"},
 ]
 
 
@@ -432,7 +431,8 @@ def RenderizarLayoutBase(TituloPagina, ConteudoPrincipal, RotaAtiva="dashboard")
                     <div class="MarcaTopo"><span>EN</span> Estoque Nuvem</div>
                     <nav class="AcoesTopo" aria-label="Ações rápidas">
                         <a href="/">Início</a>
-                        <a href="/login">Conta</a>
+                        <span>Proprietário</span>
+                        <a href="/logout">Sair</a>
                     </nav>
                 </header>
 

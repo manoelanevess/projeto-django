@@ -4,7 +4,7 @@ Projeto de controle de estoque utilizando Django para a matéria de Frameworks W
 
 ## Principais funcionalidades
 
-- Cadastro e login de usuários
+- Login do proprietário, sem cadastro público
 - Cadastro de produtos
 - Listagem com filtros
 - Controle de estoque
@@ -72,6 +72,12 @@ Depois que o PostgreSQL estiver instalado, rodando e configurado no `.env`, rode
 
 ```powershell
 python manage.py migrate
+```
+
+Crie a conta do proprietário:
+
+```powershell
+python manage.py createsuperuser
 ```
 
 ## Decisão 01 — Organização por feature
@@ -157,3 +163,15 @@ Decisão: criar um layout base em `src/componentes/LayoutBase.py` e uma página 
 Consequências: dashboard, produtos, estoque, fornecedores e login usam a mesma navegação; URLs inexistentes exibem uma tela de retorno para o dashboard.
 
 Alternativa descartada: repetir HTML e CSS de menu/topo dentro de cada feature.
+
+## Decisão 08 — Autenticação sem cadastro público
+
+Data: 02/10/2026
+
+Contexto: o sistema será usado em um comércio específico e somente o proprietário terá acesso.
+
+Decisão: usar a autenticação nativa do Django com uma conta criada pelo terminal, sem tela de cadastro, cargos ou níveis de permissão. As telas do sistema exigem login e, após a autenticação, o proprietário tem acesso completo.
+
+Consequências: o fluxo de acesso permanece simples; visitantes não acessam dados digitando uma URL diretamente; novas contas, se necessárias no futuro, devem ser criadas de forma administrativa.
+
+Alternativa descartada: cadastro público de usuários e controle de permissões por cargo, pois não fazem parte da necessidade atual do comércio.
