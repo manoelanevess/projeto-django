@@ -8,9 +8,9 @@ from componentes.LayoutBase import RenderizarLayoutBase
 from .LogicaProduto import GerarResumoProdutos
 
 
-def ComponenteListaProdutos(request):
-    Busca = request.GET.get("busca", "").strip()
-    Estoque = request.GET.get("estoque", "").strip()
+def ComponenteListaProdutos(Request):
+    Busca = Request.GET.get("busca", "").strip()
+    Estoque = Request.GET.get("estoque", "").strip()
     ResumoProdutos = GerarResumoProdutos(Busca=Busca, Estoque=Estoque)
     BuscaSegura = escape(Busca)
     OpcaoTodos = "selected" if Estoque == "" else ""
@@ -22,8 +22,9 @@ def ComponenteListaProdutos(request):
             <tr>
                 <td>{Produto["Nome"]}</td>
                 <td>{Produto["Categoria"]}</td>
-                <td>{Produto["Quantidade"]}</td>
-                <td>{Produto["EstoqueMinimo"]}</td>
+                <td>{Produto["QuantidadeFormatada"]} {Produto["Unidade"]}</td>
+                <td>{Produto["EstoqueMinimoFormatado"]} {Produto["Unidade"]}</td>
+                <td>R$ {Produto["PrecoVendaFormatado"]}</td>
             </tr>
             """
             for Produto in ResumoProdutos["Produtos"]
@@ -37,6 +38,7 @@ def ComponenteListaProdutos(request):
                         <th>Categoria</th>
                         <th>Quantidade</th>
                         <th>Estoque mínimo</th>
+                        <th>Preço de venda</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -49,7 +51,8 @@ def ComponenteListaProdutos(request):
         ResultadoProdutos = """
         <section class="EstadoVazio">
             <h2>Nenhum produto encontrado</h2>
-            <p>Altere os filtros ou cadastre um novo produto quando essa tela estiver conectada ao banco.</p>
+            <p>Altere os filtros ou cadastre o primeiro produto.</p>
+            <a class="BotaoPrimario" href="/admin/produtos/produto/add/">Cadastrar produto</a>
             <a class="BotaoSecundario" href="/produtos">Limpar filtros</a>
         </section>
         """
@@ -85,8 +88,8 @@ def ComponenteListaProdutos(request):
 
         <article class="CardIndicador" style="--CorDestaque: #f59f18;">
             <div>
-                <strong>Itens em estoque</strong>
-                <span>{ResumoProdutos["TotalItens"]}</span>
+                <strong>Produtos com saldo</strong>
+                <span>{ResumoProdutos["TotalProdutosDisponiveis"]}</span>
             </div>
             <div class="IconeIndicador" aria-hidden="true">QT</div>
         </article>

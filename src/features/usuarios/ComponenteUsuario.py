@@ -11,7 +11,7 @@ from django.shortcuts import redirect as Redirecionar
 
 def ComponenteLogin(Request):
     if Request.user.is_authenticated:
-        return Redirecionar("Dashboard")
+        return Redirecionar("PaginaPrincipal")
 
     MensagemErro = ""
     NomeUsuario = ""
@@ -27,7 +27,7 @@ def ComponenteLogin(Request):
 
         if UsuarioAutenticado is not None:
             IniciarSessao(Request, UsuarioAutenticado)
-            return Redirecionar("Dashboard")
+            return Redirecionar("PaginaPrincipal")
 
         MensagemErro = """
         <div class="MensagemErro" role="alert">

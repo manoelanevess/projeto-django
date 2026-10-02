@@ -9,7 +9,7 @@ def ComponentePaginaNaoEncontrada(request, CaminhoNaoEncontrado=None, exception=
     <section class="EstadoVazio">
         <h1>Página não encontrada</h1>
         <p>A rota solicitada não existe ou ainda não foi implementada no projeto.</p>
-        <a class="BotaoPrimario" href="/">Voltar para o dashboard</a>
+        <a class="BotaoPrimario" href="/">Voltar para a Página Principal</a>
     </section>
     """
 

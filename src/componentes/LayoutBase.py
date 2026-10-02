@@ -2,7 +2,8 @@
 
 
 MenusNavegacao = [
-    {"Chave": "dashboard", "Nome": "Dashboard", "Rota": "/", "Sigla": "DA"},
+    {"Chave": "pagina-principal", "Nome": "Principal", "Rota": "/", "Sigla": "IN"},
+    {"Chave": "carrinho", "Nome": "Carrinhos", "Rota": "/carrinho", "Sigla": "CA"},
     {"Chave": "produtos", "Nome": "Produtos", "Rota": "/produtos", "Sigla": "PR"},
     {"Chave": "estoque", "Nome": "Estoque", "Rota": "/estoque", "Sigla": "ES"},
     {
@@ -32,7 +33,7 @@ def GerarMenuNavegacao(RotaAtiva):
     return "".join(ItensMenu)
 
 
-def RenderizarLayoutBase(TituloPagina, ConteudoPrincipal, RotaAtiva="dashboard"):
+def RenderizarLayoutBase(TituloPagina, ConteudoPrincipal, RotaAtiva="pagina-principal"):
     ItensMenu = GerarMenuNavegacao(RotaAtiva)
 
     return f"""
@@ -59,7 +60,7 @@ def RenderizarLayoutBase(TituloPagina, ConteudoPrincipal, RotaAtiva="dashboard")
                 color: inherit;
             }}
 
-            .TelaDashboard {{
+            .TelaAplicacao {{
                 min-height: 100vh;
                 display: grid;
                 grid-template-columns: 92px 1fr;
@@ -372,7 +373,7 @@ def RenderizarLayoutBase(TituloPagina, ConteudoPrincipal, RotaAtiva="dashboard")
             }}
 
             @media (max-width: 760px) {{
-                .TelaDashboard {{
+                .TelaAplicacao {{
                     grid-template-columns: 1fr;
                 }}
 
@@ -420,7 +421,7 @@ def RenderizarLayoutBase(TituloPagina, ConteudoPrincipal, RotaAtiva="dashboard")
         </style>
     </head>
     <body>
-        <div class="TelaDashboard">
+        <div class="TelaAplicacao">
             <aside class="BarraLateral" aria-label="Menu principal">
                 <div class="MarcaLateral">EN</div>
                 {ItensMenu}

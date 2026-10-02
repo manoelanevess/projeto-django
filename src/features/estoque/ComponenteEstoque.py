@@ -1,12 +1,55 @@
 """Componente da tela de controle de estoque."""
+from html import escape
+
 from django.http import HttpResponse
+from django.utils import timezone
 
 from componentes.LayoutBase import RenderizarLayoutBase
-from features.produtos.LogicaProduto import GerarResumoProdutos
+from features.produtos.LogicaProduto import FormatarValorMoeda, GerarResumoProdutos
+from features.vendas.ApiVenda import BuscarVendasRecentes, ContarVendasHoje
 
 
-def ComponenteEstoque(request):
+def ComponenteEstoque(Request):
     ResumoProdutos = GerarResumoProdutos()
+    VendasRecentes = BuscarVendasRecentes()
+    LinhasVendas = "".join(
+        f"""
+        <tr>
+            <td>#{VendaRealizada.id}</td>
+            <td>{timezone.localtime(VendaRealizada.CriadaEm).strftime('%d/%m/%Y %H:%M')}</td>
+            <td>{escape(VendaRealizada.NomeCliente or 'Não identificado')}</td>
+            <td>{escape(VendaRealizada.get_FormaPagamento_display())}</td>
+            <td>R$ {FormatarValorMoeda(VendaRealizada.Total)}</td>
+        </tr>
+        """
+        for VendaRealizada in VendasRecentes
+    )
+
+    if LinhasVendas:
+        HistoricoVendas = f"""
+        <section class="PainelTabela" aria-label="Vendas recentes">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Venda</th>
+                        <th>Data</th>
+                        <th>Cliente</th>
+                        <th>Pagamento</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody>{LinhasVendas}</tbody>
+            </table>
+        </section>
+        """
+    else:
+        HistoricoVendas = """
+        <section class="EstadoVazio">
+            <h2>Nenhuma venda concluída</h2>
+            <p>As baixas automáticas aparecerão aqui depois da primeira venda.</p>
+            <a class="BotaoPrimario" href="/carrinho">Abrir carrinho</a>
+        </section>
+        """
 
     ConteudoPrincipal = f"""
     <h1>Estoque</h1>
@@ -14,8 +57,8 @@ def ComponenteEstoque(request):
     <section class="GridIndicadores" aria-label="Indicadores do estoque">
         <article class="CardIndicador" style="--CorDestaque: #2d74d8;">
             <div>
-                <strong>Total de itens</strong>
-                <span>{ResumoProdutos["TotalItens"]}</span>
+                <strong>Produtos cadastrados</strong>
+                <span>{ResumoProdutos["TotalProdutos"]}</span>
             </div>
             <div class="IconeIndicador" aria-hidden="true">QT</div>
         </article>
@@ -30,18 +73,15 @@ def ComponenteEstoque(request):
 
         <article class="CardIndicador" style="--CorDestaque: #00a889;">
             <div>
-                <strong>Movimentações hoje</strong>
-                <span>0</span>
+                <strong>Vendas hoje</strong>
+                <span>{ContarVendasHoje()}</span>
             </div>
             <div class="IconeIndicador" aria-hidden="true">MV</div>
         </article>
     </section>
 
-    <section class="EstadoVazio">
-        <h2>Movimentações de estoque</h2>
-        <p>As entradas e saídas serão exibidas aqui depois que os models e migrations forem criados.</p>
-        <a class="BotaoPrimario" href="/produtos?estoque=baixo">Ver produtos com estoque baixo</a>
-    </section>
+    <h2>Vendas recentes</h2>
+    {HistoricoVendas}
     """
 
     return HttpResponse(
