@@ -2,7 +2,7 @@
 from html import escape
 from urllib.parse import urlencode
 
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.middleware.csrf import get_token as ObterTokenCsrf
 from django.shortcuts import redirect as Redirecionar
 from django.urls import reverse as ObterRota
@@ -178,6 +178,43 @@ def RenderizarResultadosBusca(ProdutosEncontrados, TokenCsrf, NumeroCarrinho, Bu
         )
 
     return f'<section class="ListaResultadosVenda">{"".join(CartoesProdutos)}</section>'
+
+
+def ComponentePesquisarProdutos(Request):
+    Busca = Request.GET.get("busca", "").strip()
+    ProdutosEncontrados = BuscarProdutosParaVenda(Busca)
+    Produtos = []
+
+    for ProdutoVenda in ProdutosEncontrados:
+        Unidade = ProdutoVenda.ObterUnidadeResumida()
+        Estoque = (
+            ProdutoVenda.ObterDescricaoEstoque()
+            if ProdutoVenda.EhControladoPorDisponibilidade()
+            else f"{FormatarQuantidade(ProdutoVenda.QuantidadeEstoque)} {Unidade}"
+        )
+
+        Produtos.append(
+            {
+                "Id": ProdutoVenda.id,
+                "Nome": ProdutoVenda.Nome,
+                "Categoria": ProdutoVenda.Categoria or "Sem categoria",
+                "Marca": ProdutoVenda.Marca or "Sem marca",
+                "Fornecedor": ProdutoVenda.Fornecedor.Nome,
+                "Unidade": Unidade,
+                "Estoque": Estoque,
+                "Preco": FormatarValorMoeda(ProdutoVenda.PrecoVenda),
+                "Passo": ProdutoVenda.ObterPassoVenda(),
+                "QuantidadeInicial": ProdutoVenda.ObterQuantidadeInicialVenda(),
+                "RotuloQuantidade": ProdutoVenda.ObterRotuloQuantidadeVenda(),
+                "EstoqueMaximo": (
+                    str(ProdutoVenda.QuantidadeEstoque)
+                    if ProdutoVenda.ControlaQuantidadeEstoque()
+                    else ""
+                ),
+            }
+        )
+
+    return JsonResponse({"Produtos": Produtos})
 
 
 def RenderizarItensCarrinho(ResumoCarrinho, TokenCsrf, NumeroCarrinho):
@@ -685,20 +722,24 @@ def ComponenteCarrinho(Request):
     <div class="GradeVenda">
         <section class="BuscaVenda" aria-labelledby="TituloBuscaVenda">
             <h2 id="TituloBuscaVenda">Adicionar produtos</h2>
-            <form class="BarraFiltros" method="get" action="/carrinho">
+            <form class="BarraFiltros" id="FormularioBuscaCarrinho" method="get" action="/carrinho">
                 <input type="hidden" name="carrinho" value="{NumeroCarrinho}">
                 <input
+                    id="BuscaProdutoCarrinho"
                     class="CampoFormulario"
                     type="search"
                     name="busca"
                     value="{BuscaSegura}"
                     placeholder="Produto, categoria, marca ou fornecedor"
                     aria-label="Pesquisar produto, categoria, marca ou fornecedor"
+                    autocomplete="off"
                     autofocus
                 >
                 <button class="BotaoPrimario" type="submit">Pesquisar</button>
             </form>
-            {ResultadosBusca}
+            <div id="ResultadosBuscaCarrinho" aria-live="polite">
+                {ResultadosBusca}
+            </div>
         </section>
 
         <aside class="ResumoCarrinho" aria-labelledby="TituloResumoCarrinho">
@@ -760,6 +801,145 @@ def ComponenteCarrinho(Request):
 
             document.getElementById("FecharDialogoNome").addEventListener("click", () => {{
                 DialogoNome.close();
+            }});
+
+            const CampoBusca = document.getElementById("BuscaProdutoCarrinho");
+            const AreaResultados = document.getElementById("ResultadosBuscaCarrinho");
+            let TemporizadorBusca;
+            let ControleBusca;
+
+            const CriarElemento = (Tag, Classe, Texto = "") => {{
+                const Elemento = document.createElement(Tag);
+                if (Classe) Elemento.className = Classe;
+                if (Texto) Elemento.textContent = Texto;
+                return Elemento;
+            }};
+
+            const CriarCampoOculto = (FormularioProduto, Nome, Valor) => {{
+                const Campo = document.createElement("input");
+                Campo.type = "hidden";
+                Campo.name = Nome;
+                Campo.value = Valor;
+                FormularioProduto.append(Campo);
+            }};
+
+            const RenderizarEstadoBusca = (Titulo, Texto) => {{
+                const Estado = CriarElemento("section", "EstadoBuscaVenda");
+                Estado.append(
+                    CriarElemento("h2", "", Titulo),
+                    CriarElemento("p", "", Texto),
+                );
+                AreaResultados.replaceChildren(Estado);
+            }};
+
+            const RenderizarProdutos = (Produtos, Busca) => {{
+                if (!Produtos.length) {{
+                    RenderizarEstadoBusca(
+                        "Nenhum produto disponível",
+                        "Confira o nome pesquisado ou verifique o estoque.",
+                    );
+                    return;
+                }}
+
+                const Lista = CriarElemento("section", "ListaResultadosVenda");
+
+                Produtos.forEach((Produto) => {{
+                    const Cartao = CriarElemento("article", "ProdutoResultado");
+                    const Dados = CriarElemento("div", "DadosProdutoResultado");
+                    Dados.append(
+                        CriarElemento("strong", "", Produto.Nome),
+                        CriarElemento("span", "", `${{Produto.Categoria}} · ${{Produto.Marca}}`),
+                        CriarElemento(
+                            "small",
+                            "",
+                            `${{Produto.Fornecedor}} · R$ ${{Produto.Preco}} / ${{Produto.Unidade}} · Estoque: ${{Produto.Estoque}}`,
+                        ),
+                    );
+
+                    const FormularioProduto = CriarElemento("form", "FormularioAdicionar");
+                    FormularioProduto.method = "post";
+                    FormularioProduto.action = "/carrinho/adicionar";
+                    CriarCampoOculto(FormularioProduto, "csrfmiddlewaretoken", "{TokenCsrf}");
+                    CriarCampoOculto(FormularioProduto, "carrinho", "{NumeroCarrinho}");
+                    CriarCampoOculto(FormularioProduto, "produto", Produto.Id);
+                    CriarCampoOculto(FormularioProduto, "busca", Busca);
+
+                    const IdentificadorQuantidade = `Quantidade-${{Produto.Id}}`;
+                    const Rotulo = CriarElemento("label", "", Produto.RotuloQuantidade);
+                    Rotulo.htmlFor = IdentificadorQuantidade;
+
+                    const Quantidade = CriarElemento("input", "CampoQuantidade");
+                    Quantidade.id = IdentificadorQuantidade;
+                    Quantidade.type = "number";
+                    Quantidade.name = "quantidade";
+                    Quantidade.min = Produto.Passo;
+                    Quantidade.step = Produto.Passo;
+                    Quantidade.value = Produto.QuantidadeInicial;
+                    Quantidade.required = true;
+                    if (Produto.EstoqueMaximo) Quantidade.max = Produto.EstoqueMaximo;
+
+                    const BotaoAdicionar = CriarElemento("button", "BotaoPrimario", "Adicionar");
+                    BotaoAdicionar.type = "submit";
+                    FormularioProduto.append(Rotulo, Quantidade, BotaoAdicionar);
+                    Cartao.append(Dados, FormularioProduto);
+                    Lista.append(Cartao);
+                }});
+
+                AreaResultados.replaceChildren(Lista);
+            }};
+
+            const AtualizarBuscaNaUrl = (Busca) => {{
+                const Endereco = new URL(window.location.href);
+                if (Busca) Endereco.searchParams.set("busca", Busca);
+                else Endereco.searchParams.delete("busca");
+                window.history.replaceState(null, "", Endereco.toString());
+            }};
+
+            const PesquisarProdutos = async (Busca) => {{
+                ControleBusca = new AbortController();
+                const ControleAtual = ControleBusca;
+
+                try {{
+                    const Parametros = new URLSearchParams({{ busca: Busca }});
+                    const Resposta = await fetch(`/carrinho/pesquisar?${{Parametros}}`, {{
+                        credentials: "same-origin",
+                        signal: ControleAtual.signal,
+                    }});
+
+                    if (!Resposta.ok) throw new Error("Falha ao pesquisar produtos");
+                    const Dados = await Resposta.json();
+                    RenderizarProdutos(Dados.Produtos, Busca);
+                }} catch (Erro) {{
+                    if (Erro.name !== "AbortError") {{
+                        RenderizarEstadoBusca(
+                            "Pesquisa indisponível",
+                            "Não foi possível pesquisar agora. Tente novamente.",
+                        );
+                    }}
+                }} finally {{
+                    if (ControleBusca === ControleAtual) {{
+                        AreaResultados.removeAttribute("aria-busy");
+                    }}
+                }}
+            }};
+
+            CampoBusca.addEventListener("input", () => {{
+                const Busca = CampoBusca.value.trim();
+                clearTimeout(TemporizadorBusca);
+                if (ControleBusca) ControleBusca.abort();
+                AtualizarBuscaNaUrl(Busca);
+
+                if (!Busca) {{
+                    AreaResultados.removeAttribute("aria-busy");
+                    RenderizarEstadoBusca(
+                        "Pesquisar produtos",
+                        "Use o produto, a categoria, a marca ou o fornecedor na pesquisa.",
+                    );
+                    return;
+                }}
+
+                AreaResultados.setAttribute("aria-busy", "true");
+                TemporizadorBusca = window.setTimeout(() => PesquisarProdutos(Busca), 160);
             }});
 
             const Formulario = document.getElementById("FormularioPagamento");

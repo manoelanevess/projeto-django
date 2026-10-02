@@ -266,3 +266,15 @@ Decisão: manter fornecedores em cadastro próprio, com nome, telefone, e-mail, 
 Consequências: o cadastro de produtos usa uma lista consistente de fornecedores; renomear um fornecedor atualiza sua identificação em todos os produtos relacionados; fornecedores inativos não aparecem em novos cadastros, mas os vínculos existentes continuam válidos.
 
 Alternativa descartada: continuar armazenando o nome do fornecedor diretamente no produto, pois isso geraria duplicidades e dificultaria filtros confiáveis.
+
+## Decisão 16 — Pesquisa incremental no carrinho
+
+Data: 02/10/2026
+
+Contexto: durante o atendimento, o proprietário precisa localizar rapidamente um produto entre marcas e fornecedores diferentes sem interromper a digitação para enviar o formulário.
+
+Decisão: pesquisar produtos disponíveis a cada trecho digitado no carrinho, com um pequeno intervalo para evitar requisições desnecessárias. A consulta considera nome, categoria, marca e fornecedor; a query string continua registrando a busca e o botão Pesquisar permanece como alternativa sem JavaScript.
+
+Consequências: resultados como `A`, `Ar` e `Arroz` aparecem progressivamente, requisições antigas são canceladas quando a busca muda e as mesmas regras de disponibilidade do estoque são reutilizadas.
+
+Alternativa descartada: exigir o envio manual do formulário para cada pesquisa, pois isso torna o atendimento mais lento.

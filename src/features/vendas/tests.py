@@ -52,6 +52,34 @@ class TesteCarrinhosVenda(TestCase):
             },
         )
 
+    def test_PesquisaIncrementalFiltraProdutosACadaTrechoDigitado(self):
+        RespostaA = self.client.get("/carrinho/pesquisar", {"busca": "A"})
+        RespostaAr = self.client.get("/carrinho/pesquisar", {"busca": "Ar"})
+        RespostaArroz = self.client.get("/carrinho/pesquisar", {"busca": "Arroz"})
+
+        self.assertEqual(RespostaA.status_code, 200)
+        self.assertCountEqual(
+            [Produto["Nome"] for Produto in RespostaA.json()["Produtos"]],
+            ["Arroz 1 kg", "Batata"],
+        )
+        self.assertEqual(
+            [Produto["Nome"] for Produto in RespostaAr.json()["Produtos"]],
+            ["Arroz 1 kg"],
+        )
+        self.assertEqual(
+            [Produto["Nome"] for Produto in RespostaArroz.json()["Produtos"]],
+            ["Arroz 1 kg"],
+        )
+
+    def test_PesquisaIncrementalVaziaRetornaListaVaziaEFormularioContinuaDisponivel(self):
+        RespostaBusca = self.client.get("/carrinho/pesquisar", {"busca": ""})
+        PaginaCarrinho = self.client.get("/carrinho?carrinho=1")
+
+        self.assertEqual(RespostaBusca.json(), {"Produtos": []})
+        self.assertContains(PaginaCarrinho, 'id="BuscaProdutoCarrinho"')
+        self.assertContains(PaginaCarrinho, "/carrinho/pesquisar")
+        self.assertContains(PaginaCarrinho, 'type="submit">Pesquisar</button>')
+
     def test_TresCarrinhosMantemAtendimentosIndependentes(self):
         self.AdicionarProduto("1", self.Arroz, "1")
         self.AdicionarProduto("2", self.Batata, "0.750")

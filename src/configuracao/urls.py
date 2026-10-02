@@ -23,6 +23,7 @@ from features.vendas.ComponenteCarrinho import (
     ComponenteCancelarCarrinho,
     ComponenteCarrinho,
     ComponenteConcluirCompra,
+    ComponentePesquisarProdutos,
     ComponenteRemoverItem,
     ComponenteRenomearCarrinho,
 )
@@ -36,6 +37,11 @@ urlpatterns = [
     path("login", ComponenteLogin, name="Login"),
     path("logout", ComponenteLogout, name="Logout"),
     path("carrinho", ProtegerComponente(ComponenteCarrinho), name="Carrinho"),
+    path(
+        "carrinho/pesquisar",
+        ProtegerComponente(ComponentePesquisarProdutos),
+        name="PesquisarProdutosCarrinho",
+    ),
     path(
         "carrinho/adicionar",
         ProtegerComponente(ComponenteAdicionarItem),

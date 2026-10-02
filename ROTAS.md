@@ -8,6 +8,7 @@ As URLs usam substantivos no plural, letras minúsculas e hífen quando necessá
 | `/login` | Login | não | não | não | implementada |
 | `/logout` | Encerramento da sessão | não | sim | não | implementada |
 | `/carrinho` | Carrinho de compras | não | sim | `carrinho`, `busca` | implementada |
+| `/carrinho/pesquisar` | Pesquisa incremental de produtos no carrinho | não | sim | `busca` | implementada |
 | `/carrinho/adicionar` | Adicionar item | não | sim | não, ação POST | implementada |
 | `/carrinho/remover` | Remover item | não | sim | não, ação POST | implementada |
 | `/carrinho/cancelar` | Cancelar atendimento | não | sim | não, ação POST | implementada |
