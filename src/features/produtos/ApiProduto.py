@@ -1,37 +1,32 @@
-"""Camada de API inicial da feature de produtos."""
+"""Acesso aos dados persistidos da feature de produtos."""
+from django.db.models import F, Q
+
+from .models import Produto
 
 
-ProdutosIniciais = [
-    {
-        "Nome": "Caderno",
-        "Categoria": "Papelaria",
-        "Quantidade": 24,
-        "EstoqueMinimo": 10,
-        "ValorUnitario": 18.9,
-    },
-    {
-        "Nome": "Caneta",
-        "Categoria": "Papelaria",
-        "Quantidade": 8,
-        "EstoqueMinimo": 15,
-        "ValorUnitario": 2.5,
-    },
-    {
-        "Nome": "Mouse",
-        "Categoria": "Informática",
-        "Quantidade": 12,
-        "EstoqueMinimo": 6,
-        "ValorUnitario": 59.9,
-    },
-    {
-        "Nome": "Teclado",
-        "Categoria": "Informática",
-        "Quantidade": 5,
-        "EstoqueMinimo": 8,
-        "ValorUnitario": 86.0,
-    },
-]
+def BuscarProdutos(Busca="", Estoque=""):
+    Produtos = Produto.objects.filter(Ativo=True)
+
+    if Busca:
+        Produtos = Produtos.filter(
+            Q(Nome__icontains=Busca) | Q(Categoria__icontains=Busca)
+        )
+
+    if Estoque == "baixo":
+        Produtos = Produtos.filter(QuantidadeEstoque__lte=F("EstoqueMinimo"))
+
+    return Produtos.order_by("Nome")
 
 
-def BuscarProdutosIniciais():
-    return ProdutosIniciais
+def BuscarProdutosParaVenda(Busca):
+    if not Busca:
+        return Produto.objects.none()
+
+    return (
+        Produto.objects.filter(
+            Q(Nome__icontains=Busca) | Q(Categoria__icontains=Busca),
+            Ativo=True,
+            QuantidadeEstoque__gt=0,
+        )
+        .order_by("Nome")[:20]
+    )
