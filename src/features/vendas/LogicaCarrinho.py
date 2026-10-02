@@ -29,10 +29,16 @@ def ConverterQuantidade(Valor):
 
 
 def ValidarQuantidadeProduto(ProdutoVenda, Quantidade):
-    if ProdutoVenda.UnidadeVenda == Produto.UNIDADE and Quantidade % 1 != 0:
+    if ProdutoVenda.ExigeQuantidadeInteira() and Quantidade % 1 != 0:
         raise ValueError(f"{ProdutoVenda.Nome} deve ser vendido em unidades inteiras.")
 
-    if Quantidade > ProdutoVenda.QuantidadeEstoque:
+    if not ProdutoVenda.EstaDisponivelParaVenda():
+        raise ValueError(f"{ProdutoVenda.Nome} não está disponível para venda.")
+
+    if (
+        ProdutoVenda.ControlaQuantidadeEstoque()
+        and Quantidade > ProdutoVenda.QuantidadeEstoque
+    ):
         Unidade = ProdutoVenda.ObterUnidadeResumida()
         Disponivel = FormatarQuantidade(ProdutoVenda.QuantidadeEstoque)
         raise ValueError(
@@ -324,8 +330,9 @@ def ConcluirVenda(
                 PrecoUnitario=ProdutoVenda.PrecoVenda,
                 Subtotal=Subtotal,
             )
-            ProdutoVenda.QuantidadeEstoque -= Quantidade
-            ProdutoVenda.save(update_fields=["QuantidadeEstoque"])
+            if ProdutoVenda.ControlaQuantidadeEstoque():
+                ProdutoVenda.QuantidadeEstoque -= Quantidade
+                ProdutoVenda.save(update_fields=["QuantidadeEstoque"])
 
     LimparCarrinho(Request, Numero)
     return VendaConcluida

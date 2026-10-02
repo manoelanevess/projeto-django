@@ -20,7 +20,7 @@ class TesteAutenticacao(TestCase):
         return Resposta.cookies["csrftoken"].value
 
     def test_RotasProtegidasRedirecionamParaLogin(self):
-        for Rota in ["/", "/produtos", "/estoque", "/fornecedores"]:
+        for Rota in ["/", "/produtos", "/estoque", "/dashboard", "/fornecedores"]:
             with self.subTest(Rota=Rota):
                 Resposta = self.Cliente.get(Rota)
 

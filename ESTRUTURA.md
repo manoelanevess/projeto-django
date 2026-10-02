@@ -7,8 +7,8 @@ src/
   features/
     pagina_principal/ Pesquisa rápida e acesso aos atendimentos.
     usuarios/        Login do proprietário.
-    produtos/        Cadastro e listagem de produtos.
-    estoque/         Controle e filtragem de estoque.
-    fornecedor/      Cadastro e filtragem de fornecedores.
+    produtos/        Cadastro, manutenção e regras dos produtos no estoque.
+    estoque/         Tela de estoque e Dashboard de indicadores.
+    fornecedor/      Cadastro, consulta e manutenção de fornecedores.
     vendas/          Carrinhos, vendas e baixa automática do estoque.
 ```

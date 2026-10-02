@@ -9,10 +9,13 @@ class ProdutoAdmin(admin.ModelAdmin):
     list_display = (
         "Nome",
         "Categoria",
+        "Marca",
+        "Fornecedor",
         "UnidadeVenda",
         "QuantidadeEstoque",
+        "Disponivel",
         "PrecoVenda",
         "Ativo",
     )
-    list_filter = ("UnidadeVenda", "Ativo", "Categoria")
-    search_fields = ("Nome", "Categoria")
+    list_filter = ("UnidadeVenda", "Disponivel", "Ativo", "Categoria")
+    search_fields = ("Nome", "Categoria", "Marca", "Fornecedor__Nome")

@@ -5,6 +5,9 @@ from .ApiProduto import BuscarProdutos
 
 
 def FormatarQuantidade(Quantidade):
+    if Quantidade is None:
+        return ""
+
     QuantidadeDecimal = Decimal(Quantidade)
 
     if QuantidadeDecimal % 1 == 0:
@@ -22,26 +25,38 @@ def FormatarValorMoeda(Valor):
     )
 
 
-def GerarResumoProdutos(Busca="", Estoque=""):
-    ProdutosFiltrados = list(BuscarProdutos(Busca, Estoque))
+def GerarResumoProdutos(Busca="", Estoque="", Categoria="", Fornecedor=""):
+    ProdutosFiltrados = list(
+        BuscarProdutos(Busca, Estoque, Categoria, Fornecedor)
+    )
     TotalItens = sum(
-        (Produto.QuantidadeEstoque for Produto in ProdutosFiltrados),
+        (
+            Produto.QuantidadeEstoque
+            for Produto in ProdutosFiltrados
+            if Produto.ControlaQuantidadeEstoque()
+            and Produto.QuantidadeEstoque is not None
+        ),
         Decimal("0.000"),
     )
     ProdutosEstoqueBaixo = [
         Produto
         for Produto in ProdutosFiltrados
-        if Produto.QuantidadeEstoque <= Produto.EstoqueMinimo
+        if Produto.ControlaQuantidadeEstoque()
+        and Produto.QuantidadeEstoque is not None
+        and Produto.EstoqueMinimo is not None
+        and Produto.QuantidadeEstoque <= Produto.EstoqueMinimo
     ]
     ProdutosDisponiveis = [
         Produto
         for Produto in ProdutosFiltrados
-        if Produto.QuantidadeEstoque > 0
+        if Produto.EstaDisponivelParaVenda()
     ]
     CustoTotal = sum(
         (
             Produto.QuantidadeEstoque * Produto.PrecoVenda
             for Produto in ProdutosFiltrados
+            if Produto.ControlaQuantidadeEstoque()
+            and Produto.QuantidadeEstoque is not None
         ),
         Decimal("0.00"),
     )
@@ -50,6 +65,18 @@ def GerarResumoProdutos(Busca="", Estoque=""):
             "Id": Produto.id,
             "Nome": Produto.Nome,
             "Categoria": Produto.Categoria or "Sem categoria",
+            "Marca": Produto.Marca or "Sem marca",
+            "Fornecedor": Produto.Fornecedor.Nome,
+            "FornecedorId": Produto.Fornecedor_id,
+            "UnidadeVenda": Produto.UnidadeVenda,
+            "TipoVenda": Produto.get_UnidadeVenda_display(),
+            "ControlaQuantidade": Produto.ControlaQuantidadeEstoque(),
+            "Disponivel": Produto.EstaDisponivelParaVenda(),
+            "EstoqueDescricao": (
+                Produto.ObterDescricaoEstoque()
+                if Produto.EhControladoPorDisponibilidade()
+                else f"{FormatarQuantidade(Produto.QuantidadeEstoque)} {Produto.ObterUnidadeResumida()}"
+            ),
             "Quantidade": Produto.QuantidadeEstoque,
             "QuantidadeFormatada": FormatarQuantidade(Produto.QuantidadeEstoque),
             "EstoqueMinimo": Produto.EstoqueMinimo,

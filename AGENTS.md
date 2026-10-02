@@ -33,10 +33,12 @@ Roteamento: MPA com `path()` no arquivo `src/configuracao/urls.py`.
 - Não instalar biblioteca nova sem perguntar antes.
 - Não criar componentes compartilhados se eles forem usados por apenas uma feature.
 - Não importar uma feature dentro de outra sem motivo claro; Página Principal, estoque e relatórios podem consumir funções públicas de outras features para montar indicadores.
-- Manter três carrinhos independentes na sessão e reduzir o estoque apenas ao concluir a venda.
+- Manter três carrinhos independentes na sessão e reduzir o estoque quantitativo apenas ao concluir a venda.
+- Produtos vendidos por quilograma usam disponibilidade, sem quantidade exata nem baixa numérica no estoque.
+- Produtos devem selecionar um fornecedor ativo já cadastrado; fornecedores são inativados, não apagados fisicamente.
 - Tratar o nome do cliente no carrinho como opcional e temporário: copiar para a venda concluída e limpar ao concluir ou cancelar o atendimento.
 - Usar `Decimal` para valores monetários, quantidades e pesos; não usar `float` nesses cálculos.
-- Manter a consulta de estoque da Página Principal somente leitura; inclusão, edição e exclusão de produtos pertencem à feature Produtos.
+- Manter a consulta de estoque da Página Principal somente leitura; inclusão, edição e exclusão ficam na área Estoque e pertencem à feature Produtos.
 - Priorizar a experiência desktop; manter apenas responsividade básica para evitar quebra de conteúdo em telas menores.
 - Não commitar `.env`, `.venv/`, bancos locais ou arquivos de cache.
 

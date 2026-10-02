@@ -11,7 +11,6 @@ from django.views.decorators.http import require_POST as ExigirPost
 from componentes.LayoutBase import RenderizarLayoutBase
 from features.produtos.ApiProduto import BuscarProdutosParaVenda
 from features.produtos.LogicaProduto import FormatarQuantidade, FormatarValorMoeda
-from features.produtos.models import Produto
 
 from .LogicaCarrinho import (
     AdicionarProdutoAoCarrinho,
@@ -112,7 +111,7 @@ def RenderizarResultadosBusca(ProdutosEncontrados, TokenCsrf, NumeroCarrinho, Bu
         return """
         <section class="EstadoBuscaVenda">
             <h2>Pesquisar produtos</h2>
-            <p>Use o nome ou a categoria para localizar um produto.</p>
+            <p>Use o produto, a categoria, a marca ou o fornecedor na pesquisa.</p>
         </section>
         """
 
@@ -129,20 +128,31 @@ def RenderizarResultadosBusca(ProdutosEncontrados, TokenCsrf, NumeroCarrinho, Bu
     for ProdutoVenda in ProdutosEncontrados:
         NomeSeguro = escape(ProdutoVenda.Nome)
         CategoriaSegura = escape(ProdutoVenda.Categoria or "Sem categoria")
+        MarcaSegura = escape(ProdutoVenda.Marca or "Sem marca")
+        FornecedorSeguro = escape(ProdutoVenda.Fornecedor.Nome)
         Unidade = ProdutoVenda.ObterUnidadeResumida()
-        Estoque = FormatarQuantidade(ProdutoVenda.QuantidadeEstoque)
+        Estoque = (
+            escape(ProdutoVenda.ObterDescricaoEstoque())
+            if ProdutoVenda.EhControladoPorDisponibilidade()
+            else f"{FormatarQuantidade(ProdutoVenda.QuantidadeEstoque)} {Unidade}"
+        )
         Preco = FormatarValorMoeda(ProdutoVenda.PrecoVenda)
-        Passo = "1" if ProdutoVenda.UnidadeVenda == Produto.UNIDADE else "0.001"
-        QuantidadeInicial = "1" if ProdutoVenda.UnidadeVenda == Produto.UNIDADE else "0.100"
-        RotuloQuantidade = "Quantidade" if Unidade == "un" else "Peso (kg)"
+        Passo = ProdutoVenda.ObterPassoVenda()
+        QuantidadeInicial = ProdutoVenda.ObterQuantidadeInicialVenda()
+        RotuloQuantidade = ProdutoVenda.ObterRotuloQuantidadeVenda()
+        AtributoMaximo = (
+            f'max="{ProdutoVenda.QuantidadeEstoque}"'
+            if ProdutoVenda.ControlaQuantidadeEstoque()
+            else ""
+        )
 
         CartoesProdutos.append(
             f"""
             <article class="ProdutoResultado">
                 <div class="DadosProdutoResultado">
                     <strong>{NomeSeguro}</strong>
-                    <span>{CategoriaSegura}</span>
-                    <small>R$ {Preco} / {Unidade} · Estoque: {Estoque} {Unidade}</small>
+                    <span>{CategoriaSegura} · {MarcaSegura}</span>
+                    <small>{FornecedorSeguro} · R$ {Preco} / {Unidade} · Estoque: {Estoque}</small>
                 </div>
                 <form class="FormularioAdicionar" method="post" action="/carrinho/adicionar">
                     <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
@@ -156,7 +166,7 @@ def RenderizarResultadosBusca(ProdutosEncontrados, TokenCsrf, NumeroCarrinho, Bu
                         type="number"
                         name="quantidade"
                         min="{Passo}"
-                        max="{ProdutoVenda.QuantidadeEstoque}"
+                        {AtributoMaximo}
                         step="{Passo}"
                         value="{QuantidadeInicial}"
                         required
@@ -682,8 +692,8 @@ def ComponenteCarrinho(Request):
                     type="search"
                     name="busca"
                     value="{BuscaSegura}"
-                    placeholder="Pesquisar produto ou categoria"
-                    aria-label="Pesquisar produto ou categoria"
+                    placeholder="Produto, categoria, marca ou fornecedor"
+                    aria-label="Pesquisar produto, categoria, marca ou fornecedor"
                     autofocus
                 >
                 <button class="BotaoPrimario" type="submit">Pesquisar</button>

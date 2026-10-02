@@ -201,7 +201,7 @@ Data: 02/10/2026
 
 Contexto: o comércio pode atender até três clientes ao mesmo tempo, com produtos vendidos por unidade ou por peso e pagamento em dinheiro ou PIX.
 
-Decisão: manter três carrinhos independentes na sessão. A conclusão cria uma venda e seus itens no PostgreSQL e reduz o estoque dentro de uma única transação; produtos por unidade aceitam apenas números inteiros e produtos por quilograma aceitam até três casas decimais.
+Decisão: manter três carrinhos independentes na sessão. A conclusão cria uma venda e seus itens no PostgreSQL e reduz o estoque quantitativo dentro de uma única transação; produtos por unidade aceitam apenas números inteiros e produtos por quilograma aceitam até três casas decimais.
 
 Consequências: cancelar um carrinho não altera o estoque nem os outros atendimentos; dinheiro exige valor recebido e calcula troco; PIX conclui sem esse campo; falta de estoque impede toda a operação, sem baixa parcial.
 
@@ -213,7 +213,7 @@ Data: 02/10/2026
 
 Contexto: o proprietário precisa consultar o estoque durante o atendimento e, em alguns momentos, acompanhar até três clientes sem sair da Página Principal.
 
-Decisão: manter os cards de atendimentos em andamento como acionadores de painéis expansíveis. Até três painéis podem permanecer abertos lado a lado; cada um possui pesquisa por nome ou categoria, seleção de quantidade ou peso, total e pagamento. A consulta de estoque da Página Principal é somente leitura, enquanto inclusão, edição e exclusão pertencem à feature Produtos.
+Decisão: manter os cards de atendimentos em andamento como acionadores de painéis expansíveis. Até três painéis podem permanecer abertos lado a lado; cada um possui pesquisa por nome, categoria, marca ou fornecedor, seleção de quantidade ou peso, total e pagamento. A consulta de estoque da Página Principal é somente leitura, enquanto inclusão, edição e exclusão pertencem à área Estoque e à feature Produtos.
 
 Consequências: os carrinhos não escondem a página, pois são inseridos abaixo dos cards e deslocam o estoque para baixo; no celular, os painéis usam rolagem horizontal; o proprietário consegue comparar marcas e estoques antes de adicionar um item.
 
@@ -239,6 +239,30 @@ Contexto: clientes conhecidos podem ser identificados durante o atendimento, mas
 
 Decisão: permitir um nome opcional em cada carrinho. O nome permanece temporariamente na sessão, é copiado para a venda concluída e volta para `Carrinho 1`, `Carrinho 2` ou `Carrinho 3` quando o atendimento é concluído ou cancelado.
 
-Consequências: o histórico do estoque mostra quem realizou a compra quando o proprietário informou um nome; vendas sem identificação aparecem como `Não identificado`; os três carrinhos continuam independentes e reutilizáveis.
+Consequências: o histórico do Dashboard mostra quem realizou a compra quando o proprietário informou um nome; vendas sem identificação aparecem como `Não identificado`; os três carrinhos continuam independentes e reutilizáveis.
 
 Alternativa descartada: criar um cadastro obrigatório de clientes, pois aumentaria o tempo de atendimento e não é necessário para registrar vendas ocasionais.
+
+## Decisão 14 — Estoque unificado e Dashboard separado
+
+Data: 02/10/2026
+
+Contexto: o comércio trabalha com alimentos, rações, papelaria, ferramentas e itens vendidos por unidade, metro, peso ou preço fixo. A listagem de Produtos e o controle de Estoque representavam a mesma rotina de manutenção, enquanto os indicadores e o histórico de vendas possuíam função gerencial distinta.
+
+Decisão: transformar a antiga área Produtos em Estoque, concentrando cadastro, edição, exclusão lógica, busca por nome, marca ou fornecedor e filtro por categoria. Preservar a antiga tela de indicadores e vendas recentes como Dashboard. Produtos vendidos por quilograma usam apenas disponibilidade e não sofrem baixa numérica; unidades, metros e itens de preço fixo mantêm quantidade e estoque mínimo.
+
+Consequências: `/estoque` passa a ser a manutenção completa dos produtos; `/dashboard` apresenta indicadores e histórico; `/produtos` redireciona para `/estoque`; vendas por peso permanecem registradas no histórico sem depender de uma quantidade estimada em estoque.
+
+Alternativa descartada: manter Produtos e Estoque como cadastros separados ou inventar uma quantidade para produtos a granel, pois isso duplicaria responsabilidades e produziria saldos imprecisos.
+
+## Decisão 15 — Fornecedores cadastrados e vinculados aos produtos
+
+Data: 02/10/2026
+
+Contexto: pesquisar o fornecedor como texto livre permite variações de escrita e não garante que o produto esteja associado a um fornecedor conhecido pelo comércio.
+
+Decisão: manter fornecedores em cadastro próprio, com nome, telefone, e-mail, cidade e situação. Todo produto deve escolher um fornecedor cadastrado; a área Estoque oferece um filtro específico por fornecedor, além da busca textual. Fornecedores removidos são apenas inativados para preservar produtos e registros históricos.
+
+Consequências: o cadastro de produtos usa uma lista consistente de fornecedores; renomear um fornecedor atualiza sua identificação em todos os produtos relacionados; fornecedores inativos não aparecem em novos cadastros, mas os vínculos existentes continuam válidos.
+
+Alternativa descartada: continuar armazenando o nome do fornecedor diretamente no produto, pois isso geraria duplicidades e dificultaria filtros confiáveis.

@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model as ObterModeloUsuario
 from django.test import TestCase
 
+from features.fornecedor.models import Fornecedor
 from features.produtos.models import Produto
 
 from .models import Venda
@@ -16,9 +17,14 @@ class TesteCarrinhosVenda(TestCase):
             password="SenhaTeste123!",
         )
         self.client.force_login(self.Usuario)
+        self.Distribuidora = Fornecedor.objects.create(
+            Nome="Distribuidora Central"
+        )
+        self.Hortifruti = Fornecedor.objects.create(Nome="Hortifruti Silva")
         self.Arroz = Produto.objects.create(
             Nome="Arroz 1 kg",
             Categoria="Mercearia",
+            Fornecedor=self.Distribuidora,
             UnidadeVenda=Produto.UNIDADE,
             QuantidadeEstoque=Decimal("10.000"),
             EstoqueMinimo=Decimal("2.000"),
@@ -27,10 +33,13 @@ class TesteCarrinhosVenda(TestCase):
         self.Batata = Produto.objects.create(
             Nome="Batata",
             Categoria="Hortifruti",
+            Marca="Produto a granel",
+            Fornecedor=self.Hortifruti,
             UnidadeVenda=Produto.QUILOGRAMA,
-            QuantidadeEstoque=Decimal("10.000"),
-            EstoqueMinimo=Decimal("1.000"),
+            QuantidadeEstoque=None,
+            EstoqueMinimo=None,
             PrecoVenda=Decimal("4.00"),
+            Disponivel=True,
         )
 
     def AdicionarProduto(self, NumeroCarrinho, ProdutoVenda, Quantidade):
@@ -61,7 +70,7 @@ class TesteCarrinhosVenda(TestCase):
         self.Arroz.refresh_from_db()
         self.assertEqual(self.Arroz.QuantidadeEstoque, Decimal("10.000"))
 
-    def test_DinheiroCalculaTrocoEBaixaUnidadeEPeso(self):
+    def test_DinheiroCalculaTrocoEBaixaUnidadeSemBaixarProdutoPorPeso(self):
         self.AdicionarProduto("1", self.Arroz, "2")
         self.AdicionarProduto("1", self.Batata, "1.500")
 
@@ -84,7 +93,8 @@ class TesteCarrinhosVenda(TestCase):
         self.Arroz.refresh_from_db()
         self.Batata.refresh_from_db()
         self.assertEqual(self.Arroz.QuantidadeEstoque, Decimal("8.000"))
-        self.assertEqual(self.Batata.QuantidadeEstoque, Decimal("8.500"))
+        self.assertIsNone(self.Batata.QuantidadeEstoque)
+        self.assertTrue(self.Batata.Disponivel)
         self.assertNotIn("1", self.client.session.get("CarrinhosVenda", {}))
 
     def test_PixNaoExigeValorRecebido(self):
@@ -121,7 +131,7 @@ class TesteCarrinhosVenda(TestCase):
         self.Arroz.refresh_from_db()
         self.Batata.refresh_from_db()
         self.assertEqual(self.Arroz.QuantidadeEstoque, Decimal("1.000"))
-        self.assertEqual(self.Batata.QuantidadeEstoque, Decimal("10.000"))
+        self.assertIsNone(self.Batata.QuantidadeEstoque)
         self.assertIn("2", self.client.session["CarrinhosVenda"])
 
     def test_ProdutoPorUnidadeNaoAceitaFracao(self):
@@ -163,6 +173,7 @@ class TesteCarrinhosVenda(TestCase):
 
         self.assertContains(Resposta, "Consulta do estoque")
         self.assertContains(Resposta, "Arroz 1 kg")
+        self.assertContains(Resposta, "Marca")
         self.assertNotContains(Resposta, "Editar produto")
         self.assertNotContains(Resposta, "Excluir produto")
 
@@ -199,7 +210,7 @@ class TesteCarrinhosVenda(TestCase):
         self.assertEqual(VendaConcluida.NomeCliente, "Maria da Silva")
         self.assertNotIn("2", self.client.session.get("NomesCarrinhosVenda", {}))
         self.assertNotContains(self.client.get("/"), "Maria da Silva")
-        self.assertContains(self.client.get("/estoque"), "Maria da Silva")
+        self.assertContains(self.client.get("/dashboard"), "Maria da Silva")
 
     def test_CancelarCarrinhoTambemResetaONome(self):
         self.client.post(

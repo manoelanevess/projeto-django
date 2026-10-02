@@ -258,7 +258,7 @@ def RenderizarConsultaEstoque(ConsultaEstoque):
         return """
         <section class="EstadoVazio">
             <h2>Nenhum produto encontrado</h2>
-            <p>Confira o termo pesquisado ou o cadastro em Produtos.</p>
+            <p>Confira o termo pesquisado ou o cadastro em Estoque.</p>
         </section>
         """
 
@@ -266,8 +266,10 @@ def RenderizarConsultaEstoque(ConsultaEstoque):
         f"""
         <tr>
             <td><strong>{escape(ProdutoEstoque['Nome'])}</strong></td>
+            <td>{escape(ProdutoEstoque['Marca'])}</td>
             <td>{escape(ProdutoEstoque['Categoria'])}</td>
-            <td>{ProdutoEstoque['QuantidadeFormatada']} {ProdutoEstoque['Unidade']}</td>
+            <td>{escape(ProdutoEstoque['Fornecedor'])}</td>
+            <td>{escape(ProdutoEstoque['EstoqueDescricao'])}</td>
             <td>R$ {ProdutoEstoque['PrecoVendaFormatado']} / {ProdutoEstoque['Unidade']}</td>
         </tr>
         """
@@ -280,7 +282,9 @@ def RenderizarConsultaEstoque(ConsultaEstoque):
             <thead>
                 <tr>
                     <th>Produto</th>
+                    <th>Marca</th>
                     <th>Categoria</th>
+                    <th>Fornecedor</th>
                     <th>Disponível</th>
                     <th>Preço</th>
                 </tr>
@@ -700,7 +704,7 @@ def ObterScriptPaginaPrincipal(
                 const Nome = document.createElement("strong");
                 Nome.textContent = Produto.Nome;
                 const Detalhes = document.createElement("small");
-                Detalhes.textContent = `${Produto.Categoria} · R$ ${Produto.Preco} / ${Produto.Unidade} · ${Produto.Estoque} ${Produto.Unidade}`;
+                Detalhes.textContent = `${Produto.Categoria} · ${Produto.Marca} · ${Produto.Fornecedor} · R$ ${Produto.Preco} / ${Produto.Unidade} · ${Produto.Estoque}`;
                 Dados.append(Nome, Detalhes);
 
                 const Formulario = document.createElement("form");
@@ -718,10 +722,10 @@ def ObterScriptPaginaPrincipal(
                 Quantidade.type = "number";
                 Quantidade.name = "quantidade";
                 Quantidade.min = Produto.Passo;
-                Quantidade.max = Produto.EstoqueMaximo;
+                if (Produto.EstoqueMaximo) Quantidade.max = Produto.EstoqueMaximo;
                 Quantidade.step = Produto.Passo;
                 Quantidade.value = Produto.QuantidadeInicial;
-                Quantidade.setAttribute("aria-label", Produto.Unidade === "kg" ? "Peso em kg" : "Quantidade");
+                Quantidade.setAttribute("aria-label", Produto.RotuloQuantidade);
                 Quantidade.required = true;
 
                 const Adicionar = document.createElement("button");
@@ -742,7 +746,7 @@ def ObterScriptPaginaPrincipal(
 
                 const TermoNormalizado = Normalizar(Termo);
                 const Encontrados = Produtos.filter((Produto) =>
-                    Normalizar(`${Produto.Nome} ${Produto.Categoria}`).includes(TermoNormalizado)
+                    Normalizar(`${Produto.Nome} ${Produto.Categoria} ${Produto.Marca} ${Produto.Fornecedor}`).includes(TermoNormalizado)
                 ).slice(0, 8);
 
                 if (!Encontrados.length) {
@@ -900,15 +904,28 @@ def ComponentePaginaPrincipal(Request):
             "Id": ProdutoEstoque["Id"],
             "Nome": ProdutoEstoque["Nome"],
             "Categoria": ProdutoEstoque["Categoria"],
+            "Marca": ProdutoEstoque["Marca"],
+            "Fornecedor": ProdutoEstoque["Fornecedor"],
             "Unidade": ProdutoEstoque["Unidade"],
-            "Estoque": ProdutoEstoque["QuantidadeFormatada"],
-            "EstoqueMaximo": format(ProdutoEstoque["Quantidade"], "f"),
+            "Estoque": ProdutoEstoque["EstoqueDescricao"],
+            "EstoqueMaximo": (
+                format(ProdutoEstoque["Quantidade"], "f")
+                if ProdutoEstoque["ControlaQuantidade"]
+                else ""
+            ),
             "Preco": ProdutoEstoque["PrecoVendaFormatado"],
-            "Passo": "1" if ProdutoEstoque["Unidade"] == "un" else "0.001",
-            "QuantidadeInicial": "1" if ProdutoEstoque["Unidade"] == "un" else "0.100",
+            "Passo": "1" if ProdutoEstoque["Unidade"] in {"un", "item"} else "0.001",
+            "QuantidadeInicial": "0.100" if ProdutoEstoque["Unidade"] == "kg" else "1",
+            "RotuloQuantidade": (
+                "Peso em kg"
+                if ProdutoEstoque["Unidade"] == "kg"
+                else "Comprimento em metros"
+                if ProdutoEstoque["Unidade"] == "m"
+                else "Quantidade"
+            ),
         }
         for ProdutoEstoque in ResumoProdutos["Produtos"]
-        if ProdutoEstoque["Quantidade"] > 0
+        if ProdutoEstoque["Disponivel"]
     ]
     ProdutosJson = json.dumps(
         ProdutosParaPesquisa,
@@ -1012,7 +1029,7 @@ def ComponentePaginaPrincipal(Request):
                 type="search"
                 name="busca"
                 value="{escape(BuscaEstoque)}"
-                placeholder="Pesquisar produto ou categoria"
+                placeholder="Produto, categoria, marca ou fornecedor"
                 aria-label="Pesquisar no estoque"
             >
             <button class="BotaoPrimario" type="submit">Pesquisar</button>

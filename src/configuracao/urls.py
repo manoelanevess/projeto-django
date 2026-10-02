@@ -4,10 +4,19 @@ from django.contrib.auth.decorators import login_required as ExigirLogin
 from django.urls import path
 
 from componentes.ComponenteErro import ComponentePaginaNaoEncontrada
+from features.estoque.ComponenteDashboard import ComponenteDashboard
 from features.estoque.ComponenteEstoque import ComponenteEstoque
-from features.fornecedor.ComponenteFornecedor import ComponenteFornecedores
+from features.fornecedor.ComponenteFornecedor import (
+    ComponenteExcluirFornecedor,
+    ComponenteFornecedores,
+    ComponenteFormularioFornecedor,
+)
 from features.pagina_principal.ComponentePaginaPrincipal import ComponentePaginaPrincipal
-from features.produtos.ComponenteProduto import ComponenteListaProdutos
+from features.produtos.ComponenteProduto import (
+    ComponenteExcluirProduto,
+    ComponenteFormularioProduto,
+    ComponenteRedirecionarProdutos,
+)
 from features.usuarios.ComponenteUsuario import ComponenteLogin, ComponenteLogout
 from features.vendas.ComponenteCarrinho import (
     ComponenteAdicionarItem,
@@ -54,14 +63,49 @@ urlpatterns = [
     ),
     path(
         "produtos",
-        ProtegerComponente(ComponenteListaProdutos),
+        ProtegerComponente(ComponenteRedirecionarProdutos),
         name="ListaProdutos",
     ),
     path("estoque", ProtegerComponente(ComponenteEstoque), name="Estoque"),
     path(
+        "dashboard",
+        ProtegerComponente(ComponenteDashboard),
+        name="Dashboard",
+    ),
+    path(
+        "estoque/novo",
+        ProtegerComponente(ComponenteFormularioProduto),
+        name="AdicionarProduto",
+    ),
+    path(
+        "estoque/<int:ProdutoId>/editar",
+        ProtegerComponente(ComponenteFormularioProduto),
+        name="EditarProduto",
+    ),
+    path(
+        "estoque/<int:ProdutoId>/excluir",
+        ProtegerComponente(ComponenteExcluirProduto),
+        name="ExcluirProduto",
+    ),
+    path(
         "fornecedores",
         ProtegerComponente(ComponenteFornecedores),
         name="Fornecedores",
+    ),
+    path(
+        "fornecedores/novo",
+        ProtegerComponente(ComponenteFormularioFornecedor),
+        name="AdicionarFornecedor",
+    ),
+    path(
+        "fornecedores/<int:FornecedorId>/editar",
+        ProtegerComponente(ComponenteFormularioFornecedor),
+        name="EditarFornecedor",
+    ),
+    path(
+        "fornecedores/<int:FornecedorId>/excluir",
+        ProtegerComponente(ComponenteExcluirFornecedor),
+        name="ExcluirFornecedor",
     ),
     path(
         "<path:CaminhoNaoEncontrado>",

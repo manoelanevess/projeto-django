@@ -4,8 +4,8 @@
 MenusNavegacao = [
     {"Chave": "pagina-principal", "Nome": "Principal", "Rota": "/", "Sigla": "IN"},
     {"Chave": "carrinho", "Nome": "Carrinhos", "Rota": "/carrinho", "Sigla": "CA"},
-    {"Chave": "produtos", "Nome": "Produtos", "Rota": "/produtos", "Sigla": "PR"},
     {"Chave": "estoque", "Nome": "Estoque", "Rota": "/estoque", "Sigla": "ES"},
+    {"Chave": "dashboard", "Nome": "Dashboard", "Rota": "/dashboard", "Sigla": "DB"},
     {
         "Chave": "fornecedores",
         "Nome": "Fornecedores",
