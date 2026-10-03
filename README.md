@@ -111,6 +111,8 @@ Antes da primeira publicação, aplique as migrations no Neon. A migração inic
 
 O ambiente local continua usando `POSTGRES_DB`. Em produção, o projeto também aceita `POSTGRES_DATABASE`, nome criado automaticamente pela integração Neon da Vercel.
 
+Como a configuração do Django fica em `src/configuracao`, o caminho WSGI inclui o prefixo `src` para que a Vercel localize o arquivo sem mover a estrutura do projeto.
+
 ## Decisão 01 — Organização por feature
 
 Data: 02/09/2026
@@ -361,6 +363,6 @@ Contexto: o projeto usa Django para entregar as páginas HTML e executar toda a 
 
 Decisão: publicar frontend e backend juntos em um único projeto Django na Vercel e usar um banco PostgreSQL no Neon com conexão agrupada e SSL obrigatório. Na carga inicial de produção, migrar usuário, fornecedores e produtos, sem levar vendas, itens de venda, resumos financeiros ou sessões do ambiente local.
 
-Consequências: um único deploy mantém navegação e backend na mesma origem; o banco de produção começa com o cadastro necessário para operar, mas com Dashboard e histórico de vendas zerados; segredos e dados de conexão ficam somente nas variáveis de ambiente da Vercel; a configuração aceita `POSTGRES_DATABASE` da integração Neon sem alterar o `POSTGRES_DB` usado localmente.
+Consequências: um único deploy mantém navegação e backend na mesma origem; o banco de produção começa com o cadastro necessário para operar, mas com Dashboard e histórico de vendas zerados; segredos e dados de conexão ficam somente nas variáveis de ambiente da Vercel; a configuração aceita `POSTGRES_DATABASE` da integração Neon sem alterar o `POSTGRES_DB` usado localmente; o ponto de entrada WSGI informa o caminho completo em `src` exigido pela detecção da Vercel.
 
 Alternativa descartada: separar as páginas Django em outro projeto de frontend ou copiar o histórico de testes para produção, pois isso adicionaria complexidade sem benefício para a arquitetura atual.
