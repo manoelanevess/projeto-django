@@ -128,7 +128,8 @@ class TesteManutencaoEstoque(TestCase):
         self.assertContains(Resposta, "Produtos cadastrados")
         self.assertContains(Resposta, "Valor do estoque")
         self.assertContains(Resposta, "R$ 60,00")
-        self.assertContains(Resposta, "Lucro hoje")
+        self.assertContains(Resposta, "Faturamento hoje")
+        self.assertContains(Resposta, "Entradas, custos e lucro dos produtos")
         self.assertContains(Resposta, "Vendas recentes")
 
     def test_TabelasDeProdutosExibemCustoAoLadoDaVenda(self):

@@ -39,6 +39,8 @@ Roteamento: MPA com `path()` no arquivo `src/configuracao/urls.py`.
 - Produtos possuem preço de custo e de venda; carrinhos mostram somente a venda, e tabelas administrativas mostram ambos.
 - O lucro da venda usa o custo copiado no momento da conclusão, sem recálculo retroativo.
 - O dia comercial dos indicadores diários começa às 07:00 e termina às 06:59 do dia seguinte.
+- Indicadores de faturamento mostram a soma das vendas; o resultado financeiro separa entradas, custo dos produtos vendidos e lucro dos produtos.
+- Linhas de vendas recentes na Dashboard expandem no próprio histórico para mostrar itens, quantidades e valores cobrados, sem expor custos.
 - Vendas de meses encerrados são consolidadas antes da remoção dos detalhes para preservar os indicadores anuais.
 - Tratar o nome do cliente no carrinho como opcional e temporário: copiar para a venda concluída e limpar ao concluir ou cancelar o atendimento.
 - Usar `Decimal` para valores monetários, quantidades e pesos; não usar `float` nesses cálculos.

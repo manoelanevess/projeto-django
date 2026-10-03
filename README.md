@@ -302,3 +302,27 @@ Decisão: considerar o dia comercial no intervalo entre 07:00 de um dia e 06:59 
 Consequências: vendas realizadas antes das 07:00 ainda pertencem ao dia comercial anterior; a partir das 07:00 os indicadores diários iniciam um novo período, enquanto os totais mensal e anual continuam seguindo o calendário.
 
 Alternativa descartada: reiniciar os indicadores à meia-noite, pois essa virada não representa a rotina de funcionamento do comércio.
+
+## Decisão 19 — Separar faturamento de lucro dos produtos
+
+Data: 02/10/2026
+
+Contexto: a soma das vendas precisa ficar visível nos períodos diário, mensal e anual, mas chamar esse valor de lucro esconderia o custo dos produtos vendidos.
+
+Decisão: apresentar os cards principais como faturamento de hoje, do mês e do ano. Manter um resumo financeiro separado com entradas das vendas, custo dos produtos vendidos e lucro dos produtos para os mesmos períodos.
+
+Consequências: cada venda aumenta imediatamente o faturamento; o lucro dos produtos só aumenta quando o preço de venda supera o custo registrado no momento da venda; valores mensais consolidados continuam permitindo calcular o custo pela diferença entre faturamento e lucro. Aluguel, energia e outras despesas gerais ficam fora desse cálculo.
+
+Alternativa descartada: usar o termo lucro para toda entrada de venda, pois isso mistura faturamento com resultado financeiro e pode levar a decisões incorretas.
+
+## Decisão 20 — Detalhes expansíveis nas vendas recentes
+
+Data: 02/10/2026
+
+Contexto: o proprietário precisa conferir rapidamente quais produtos e quantidades formaram uma venda sem sair da Dashboard durante o atendimento.
+
+Decisão: tornar cada linha de venda recente expansível no próprio histórico. O detalhe mostra produto, quantidade, preço unitário cobrado e subtotal, mantendo preços de custo fora dessa visualização.
+
+Consequências: até cinco vendas recentes carregam seus itens em uma consulta otimizada e permanecem fechadas até o clique; o controle também funciona por teclado no botão de expansão.
+
+Alternativa descartada: abrir uma página separada para cada venda, pois isso interromperia a consulta rápida e adicionaria navegação desnecessária.

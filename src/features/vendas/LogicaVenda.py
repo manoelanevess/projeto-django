@@ -125,13 +125,24 @@ def ObterResumoFinanceiro(Proprietario, DataReferencia=None):
         Ano=Hoje.year,
     )
 
+    LucroHoje = SomarCampo(VendasHoje, "Lucro")
+    LucroMes = SomarCampo(VendasMes, "Lucro")
+    LucroAno = SomarCampo(VendasAno, "Lucro") + SomarCampo(ResumosAno, "Lucro")
+    TotalVendidoHoje = SomarCampo(VendasHoje, "Total")
+    TotalVendidoMes = SomarCampo(VendasMes, "Total")
+    TotalVendidoAno = SomarCampo(VendasAno, "Total") + SomarCampo(
+        ResumosAno,
+        "TotalVendido",
+    )
+
     return {
-        "LucroHoje": SomarCampo(VendasHoje, "Lucro"),
-        "LucroMes": SomarCampo(VendasMes, "Lucro"),
-        "LucroAno": SomarCampo(VendasAno, "Lucro")
-        + SomarCampo(ResumosAno, "Lucro"),
-        "TotalVendidoHoje": SomarCampo(VendasHoje, "Total"),
-        "TotalVendidoMes": SomarCampo(VendasMes, "Total"),
-        "TotalVendidoAno": SomarCampo(VendasAno, "Total")
-        + SomarCampo(ResumosAno, "TotalVendido"),
+        "LucroHoje": LucroHoje,
+        "LucroMes": LucroMes,
+        "LucroAno": LucroAno,
+        "TotalVendidoHoje": TotalVendidoHoje,
+        "TotalVendidoMes": TotalVendidoMes,
+        "TotalVendidoAno": TotalVendidoAno,
+        "CustoProdutosHoje": TotalVendidoHoje - LucroHoje,
+        "CustoProdutosMes": TotalVendidoMes - LucroMes,
+        "CustoProdutosAno": TotalVendidoAno - LucroAno,
     }

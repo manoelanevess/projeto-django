@@ -14,7 +14,9 @@ def ContarVendasHoje(Proprietario=None):
 
 
 def BuscarVendasRecentes(Limite=5, Proprietario=None):
-    VendasRecentes = Venda.objects.select_related("Proprietario")
+    VendasRecentes = Venda.objects.select_related("Proprietario").prefetch_related(
+        "Itens"
+    )
 
     if Proprietario is not None:
         VendasRecentes = VendasRecentes.filter(Proprietario=Proprietario)

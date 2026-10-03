@@ -151,7 +151,7 @@ class TesteCarrinhosVenda(TestCase):
         self.assertIsNone(VendaConcluida.ValorRecebido)
         self.assertEqual(VendaConcluida.Troco, Decimal("0.00"))
 
-    def test_DashboardMostraLucroMasVendaRecenteExibeSomenteTotalCobrado(self):
+    def test_DashboardDistingueFaturamentoCustoELucroDosProdutos(self):
         self.AdicionarProduto("1", self.Arroz, "1")
         self.client.post(
             "/carrinho/concluir",
@@ -160,10 +160,17 @@ class TesteCarrinhosVenda(TestCase):
 
         Resposta = self.client.get("/dashboard")
 
-        self.assertContains(Resposta, "Lucro hoje")
+        self.assertContains(Resposta, "Faturamento hoje")
+        self.assertContains(Resposta, "Entradas, custos e lucro dos produtos")
+        self.assertContains(Resposta, "Custo dos produtos vendidos")
         self.assertContains(Resposta, "R$ 4,00")
+        self.assertContains(Resposta, "R$ 6,00")
         self.assertContains(Resposta, "Total da compra")
         self.assertContains(Resposta, "R$ 10,00")
+        self.assertContains(Resposta, "Itens da venda")
+        self.assertContains(Resposta, "1 un")
+        self.assertContains(Resposta, 'data-detalhe-venda="DetalhesVenda')
+        self.assertContains(Resposta, 'aria-expanded="false"')
         self.assertNotContains(Resposta, "Preço de custo")
 
     def test_LucroHojeReiniciaAsSeteDaManha(self):
@@ -197,6 +204,14 @@ class TesteCarrinhosVenda(TestCase):
 
         self.assertEqual(ResumoAntesDasSete["LucroHoje"], Decimal("3.00"))
         self.assertEqual(ResumoDepoisDasSete["LucroHoje"], Decimal("8.00"))
+        self.assertEqual(
+            ResumoDepoisDasSete["TotalVendidoHoje"],
+            Decimal("20.00"),
+        )
+        self.assertEqual(
+            ResumoDepoisDasSete["CustoProdutosHoje"],
+            Decimal("12.00"),
+        )
 
     def test_EstoqueInsuficienteImpedeTodaABaixa(self):
         self.AdicionarProduto("2", self.Arroz, "2")
