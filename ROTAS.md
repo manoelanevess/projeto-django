@@ -8,16 +8,22 @@ As URLs usam substantivos no plural, letras minúsculas e hífen quando necessá
 | `/login` | Login | não | não | não | implementada |
 | `/logout` | Encerramento da sessão | não | sim | não | implementada |
 | `/carrinho` | Carrinho de compras | não | sim | `carrinho`, `busca` | implementada |
+| `/carrinho/pesquisar` | Pesquisa incremental de produtos no carrinho | não | sim | `busca` | implementada |
 | `/carrinho/adicionar` | Adicionar item | não | sim | não, ação POST | implementada |
 | `/carrinho/remover` | Remover item | não | sim | não, ação POST | implementada |
 | `/carrinho/cancelar` | Cancelar atendimento | não | sim | não, ação POST | implementada |
 | `/carrinho/concluir` | Concluir venda | não | sim | não, ação POST | implementada |
 | `/carrinho/nome` | Identificar cliente do carrinho | não | sim | não, ação POST | implementada |
-| `/produtos` | Lista de produtos | não | sim | `busca`, `estoque` | implementada |
-| `/produtos/novo` | Cadastro de produto | não | sim | não | planejada |
-| `/produtos/<id>` | Detalhe do produto | `id` | sim | não | planejada |
-| `/estoque` | Controle de estoque | não | sim | `status`, `produto` | implementada |
+| `/produtos` | Redirecionamento para Estoque | não | sim | não | implementada |
+| `/estoque` | Produtos e controle de estoque | não | sim | `busca`, `categoria`, `fornecedor`, `estoque` | implementada |
+| `/estoque/novo` | Cadastro de produto | não | sim | não | implementada |
+| `/estoque/<id>/editar` | Edição de produto | `id` | sim | não | implementada |
+| `/estoque/<id>/excluir` | Exclusão lógica de produto | `id` | sim | não, ação POST | implementada |
+| `/dashboard` | Indicadores e vendas recentes | não | sim | não | implementada |
 | `/fornecedores` | Lista de fornecedores | não | sim | `busca` | implementada |
+| `/fornecedores/novo` | Cadastro de fornecedor | não | sim | não | implementada |
+| `/fornecedores/<id>/editar` | Edição de fornecedor | `id` | sim | não | implementada |
+| `/fornecedores/<id>/excluir` | Inativação de fornecedor | `id` | sim | não, ação POST | implementada |
 | `*` | Página 404 | caminho inválido | sim | não | implementada |
 
 O sistema não possui cadastro público. A conta do proprietário é criada pelo terminal e, após o login, tem acesso completo a todas as funcionalidades.
@@ -48,23 +54,33 @@ O sistema não possui cadastro público. A conta do proprietário é criada pelo
 └──────┘└──────────────────────────────────────────────────┘
 ```
 
-## Esboço — Produtos
-
-```text
-┌ menu ┐┌─────────────────────────────────────────────┐
-│      ││ Produtos                                    │
-│      ││ [busca por nome/categoria] [estoque] [filtrar]│
-│      ││ [produtos encontrados] [itens] [estoque baixo]│
-│      ││ tabela: produto | categoria | qtd | mínimo  │
-└──────┘└─────────────────────────────────────────────┘
-```
-
 ## Esboço — Estoque
 
 ```text
 ┌ menu ┐┌─────────────────────────────────────────────┐
-│      ││ Estoque                                     │
-│      ││ [total itens] [produtos em alerta] [mov hoje]│
-│      ││ lista futura de entradas e saídas           │
+│      ││ Estoque                    [adicionar produto]│
+│      ││ [busca] [categoria] [fornecedor] [situação]  │
+│      ││ [produtos] [disponíveis] [estoque baixo]    │
+│      ││ tabela: produto | marca | fornecedor | ações │
+└──────┘└─────────────────────────────────────────────┘
+```
+
+## Esboço — Fornecedores
+
+```text
+┌ menu ┐┌─────────────────────────────────────────────┐
+│      ││ Fornecedores          [adicionar fornecedor]│
+│      ││ [pesquisa por nome, contato ou cidade]      │
+│      ││ tabela: fornecedor | contato | produtos     │
+└──────┘└─────────────────────────────────────────────┘
+```
+
+## Esboço — Dashboard
+
+```text
+┌ menu ┐┌─────────────────────────────────────────────┐
+│      ││ Dashboard                                   │
+│      ││ [produtos] [produtos em alerta] [vendas hoje]│
+│      ││ tabela de vendas recentes                   │
 └──────┘└─────────────────────────────────────────────┘
 ```

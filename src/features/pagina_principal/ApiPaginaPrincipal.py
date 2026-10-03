@@ -3,16 +3,16 @@
 
 AtalhosOperacionais = [
     {
-        "Titulo": "Produtos",
-        "Descricao": "Consultar cadastro e preços",
-        "Rota": "/produtos",
-        "Sigla": "PR",
-    },
-    {
         "Titulo": "Estoque",
-        "Descricao": "Acompanhar quantidades",
+        "Descricao": "Cadastrar produtos e ajustar quantidades",
         "Rota": "/estoque",
         "Sigla": "ES",
+    },
+    {
+        "Titulo": "Dashboard",
+        "Descricao": "Acompanhar indicadores e vendas",
+        "Rota": "/dashboard",
+        "Sigla": "DB",
     },
     {
         "Titulo": "Fornecedores",
