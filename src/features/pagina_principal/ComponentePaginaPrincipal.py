@@ -270,6 +270,7 @@ def RenderizarConsultaEstoque(ConsultaEstoque):
             <td>{escape(ProdutoEstoque['Categoria'])}</td>
             <td>{escape(ProdutoEstoque['Fornecedor'])}</td>
             <td>{escape(ProdutoEstoque['EstoqueDescricao'])}</td>
+            <td>R$ {ProdutoEstoque['PrecoCustoFormatado']}</td>
             <td>R$ {ProdutoEstoque['PrecoVendaFormatado']} / {ProdutoEstoque['Unidade']}</td>
         </tr>
         """
@@ -286,7 +287,8 @@ def RenderizarConsultaEstoque(ConsultaEstoque):
                     <th>Categoria</th>
                     <th>Fornecedor</th>
                     <th>Disponível</th>
-                    <th>Preço</th>
+                    <th>Preço de custo</th>
+                    <th>Preço de venda</th>
                 </tr>
             </thead>
             <tbody>{Linhas}</tbody>

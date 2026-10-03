@@ -18,6 +18,7 @@ class FormularioProduto(forms.ModelForm):
             "Marca",
             "Fornecedor",
             "UnidadeVenda",
+            "PrecoCusto",
             "PrecoVenda",
             "QuantidadeEstoque",
             "EstoqueMinimo",
@@ -31,6 +32,9 @@ class FormularioProduto(forms.ModelForm):
             "Marca": forms.TextInput(attrs={"class": "CampoFormulario"}),
             "Fornecedor": forms.Select(attrs={"class": "CampoFormulario"}),
             "UnidadeVenda": forms.Select(attrs={"class": "CampoFormulario"}),
+            "PrecoCusto": forms.NumberInput(
+                attrs={"class": "CampoFormulario", "min": "0", "step": "0.01"}
+            ),
             "PrecoVenda": forms.NumberInput(
                 attrs={"class": "CampoFormulario", "min": "0.01", "step": "0.01"}
             ),
@@ -48,8 +52,13 @@ class FormularioProduto(forms.ModelForm):
         self.fields["Categoria"].required = True
         self.fields["Fornecedor"].required = True
         self.fields["Fornecedor"].empty_label = "Selecione um fornecedor"
+        self.fields["PrecoCusto"].required = True
         self.fields["QuantidadeEstoque"].required = False
         self.fields["EstoqueMinimo"].required = False
+
+        if not self.instance.pk:
+            self.fields["PrecoCusto"].initial = None
+            self.initial["PrecoCusto"] = None
 
         FiltroFornecedores = Q(Ativo=True)
 

@@ -41,17 +41,23 @@ def GerarResumoProdutos(Busca="", Estoque="", Categoria="", Fornecedor=""):
     ProdutosEstoqueBaixo = [
         Produto
         for Produto in ProdutosFiltrados
-        if Produto.ControlaQuantidadeEstoque()
-        and Produto.QuantidadeEstoque is not None
-        and Produto.EstoqueMinimo is not None
-        and Produto.QuantidadeEstoque <= Produto.EstoqueMinimo
+        if Produto.EstaComEstoqueBaixo()
     ]
     ProdutosDisponiveis = [
         Produto
         for Produto in ProdutosFiltrados
         if Produto.EstaDisponivelParaVenda()
     ]
-    CustoTotal = sum(
+    ValorTotalCusto = sum(
+        (
+            Produto.QuantidadeEstoque * Produto.PrecoCusto
+            for Produto in ProdutosFiltrados
+            if Produto.ControlaQuantidadeEstoque()
+            and Produto.QuantidadeEstoque is not None
+        ),
+        Decimal("0.00"),
+    )
+    ValorTotalVenda = sum(
         (
             Produto.QuantidadeEstoque * Produto.PrecoVenda
             for Produto in ProdutosFiltrados
@@ -72,6 +78,7 @@ def GerarResumoProdutos(Busca="", Estoque="", Categoria="", Fornecedor=""):
             "TipoVenda": Produto.get_UnidadeVenda_display(),
             "ControlaQuantidade": Produto.ControlaQuantidadeEstoque(),
             "Disponivel": Produto.EstaDisponivelParaVenda(),
+            "EstoqueBaixo": Produto.EstaComEstoqueBaixo(),
             "EstoqueDescricao": (
                 Produto.ObterDescricaoEstoque()
                 if Produto.EhControladoPorDisponibilidade()
@@ -81,6 +88,8 @@ def GerarResumoProdutos(Busca="", Estoque="", Categoria="", Fornecedor=""):
             "QuantidadeFormatada": FormatarQuantidade(Produto.QuantidadeEstoque),
             "EstoqueMinimo": Produto.EstoqueMinimo,
             "EstoqueMinimoFormatado": FormatarQuantidade(Produto.EstoqueMinimo),
+            "PrecoCusto": Produto.PrecoCusto,
+            "PrecoCustoFormatado": FormatarValorMoeda(Produto.PrecoCusto),
             "PrecoVenda": Produto.PrecoVenda,
             "PrecoVendaFormatado": FormatarValorMoeda(Produto.PrecoVenda),
             "Unidade": Produto.ObterUnidadeResumida(),
@@ -95,5 +104,13 @@ def GerarResumoProdutos(Busca="", Estoque="", Categoria="", Fornecedor=""):
         "TotalItens": TotalItens,
         "TotalItensFormatado": FormatarQuantidade(TotalItens),
         "TotalEstoqueBaixo": len(ProdutosEstoqueBaixo),
-        "CustoTotal": CustoTotal,
+        "ProdutosEstoqueBaixo": [
+            ProdutoFormatado
+            for ProdutoFormatado in ProdutosFormatados
+            if ProdutoFormatado["EstoqueBaixo"]
+        ],
+        "ValorTotalCusto": ValorTotalCusto,
+        "ValorTotalCustoFormatado": FormatarValorMoeda(ValorTotalCusto),
+        "ValorTotalVenda": ValorTotalVenda,
+        "ValorTotalVendaFormatado": FormatarValorMoeda(ValorTotalVenda),
     }

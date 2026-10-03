@@ -48,6 +48,12 @@ class Produto(models.Model):
         blank=True,
         validators=[MinValueValidator(Decimal("0.000"))],
     )
+    PrecoCusto = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[MinValueValidator(Decimal("0.00"))],
+    )
     PrecoVenda = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -109,6 +115,14 @@ class Produto(models.Model):
             return self.Disponivel
 
         return self.QuantidadeEstoque is not None and self.QuantidadeEstoque > 0
+
+    def EstaComEstoqueBaixo(self):
+        return (
+            self.ControlaQuantidadeEstoque()
+            and self.QuantidadeEstoque is not None
+            and self.EstoqueMinimo is not None
+            and self.QuantidadeEstoque <= self.EstoqueMinimo
+        )
 
     def ObterUnidadeResumida(self):
         if self.UnidadeVenda == self.QUILOGRAMA:

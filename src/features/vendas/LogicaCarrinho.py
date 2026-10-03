@@ -286,6 +286,7 @@ def ConcluirVenda(
 
         ItensVenda = []
         Total = Decimal("0.00")
+        LucroTotal = Decimal("0.00")
 
         for ProdutoId, ValorQuantidade in Carrinho.items():
             ProdutoVenda = ProdutosBloqueados[int(ProdutoId)]
@@ -295,10 +296,19 @@ def ConcluirVenda(
                 Centavo,
                 rounding=ROUND_HALF_UP,
             )
+            CustoItem = (Quantidade * ProdutoVenda.PrecoCusto).quantize(
+                Centavo,
+                rounding=ROUND_HALF_UP,
+            )
+            LucroItem = (Subtotal - CustoItem).quantize(Centavo)
             Total += Subtotal
-            ItensVenda.append((ProdutoVenda, Quantidade, Subtotal))
+            LucroTotal += LucroItem
+            ItensVenda.append(
+                (ProdutoVenda, Quantidade, Subtotal, LucroItem)
+            )
 
         Total = Total.quantize(Centavo, rounding=ROUND_HALF_UP)
+        LucroTotal = LucroTotal.quantize(Centavo, rounding=ROUND_HALF_UP)
         ValorRecebido = None
         Troco = Decimal("0.00")
 
@@ -316,19 +326,22 @@ def ConcluirVenda(
             NomeCliente=NomeCliente,
             FormaPagamento=FormaPagamento,
             Total=Total,
+            Lucro=LucroTotal,
             ValorRecebido=ValorRecebido,
             Troco=Troco,
         )
 
-        for ProdutoVenda, Quantidade, Subtotal in ItensVenda:
+        for ProdutoVenda, Quantidade, Subtotal, LucroItem in ItensVenda:
             ItemVenda.objects.create(
                 Venda=VendaConcluida,
                 Produto=ProdutoVenda,
                 NomeProduto=ProdutoVenda.Nome,
                 UnidadeVenda=ProdutoVenda.UnidadeVenda,
                 Quantidade=Quantidade,
+                CustoUnitario=ProdutoVenda.PrecoCusto,
                 PrecoUnitario=ProdutoVenda.PrecoVenda,
                 Subtotal=Subtotal,
+                Lucro=LucroItem,
             )
             if ProdutoVenda.ControlaQuantidadeEstoque():
                 ProdutoVenda.QuantidadeEstoque -= Quantidade

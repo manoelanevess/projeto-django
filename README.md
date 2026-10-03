@@ -278,3 +278,15 @@ Decisão: pesquisar produtos disponíveis a cada trecho digitado no carrinho, co
 Consequências: resultados como `A`, `Ar` e `Arroz` aparecem progressivamente, requisições antigas são canceladas quando a busca muda e as mesmas regras de disponibilidade do estoque são reutilizadas.
 
 Alternativa descartada: exigir o envio manual do formulário para cada pesquisa, pois isso torna o atendimento mais lento.
+
+## Decisão 17 — Custo, lucro e consolidação mensal das vendas
+
+Data: 02/10/2026
+
+Contexto: a Dashboard precisa mostrar o valor investido no estoque, os lucros do dia, mês e ano e os produtos abaixo do estoque mínimo sem manter indefinidamente todos os detalhes de vendas antigas.
+
+Decisão: cadastrar preço de custo e preço de venda em cada produto. As tabelas administrativas de produtos exibem os dois valores, enquanto o carrinho e o histórico de vendas mostram somente o preço cobrado. Ao concluir uma venda, copiar o custo vigente para o item e registrar o lucro calculado. Na primeira abertura da Dashboard após a mudança de mês, consolidar vendas de meses anteriores em totais mensais não exibidos e remover seus detalhes; esses resumos continuam compondo o lucro anual.
+
+Consequências: alterar o custo de um produto não modifica o lucro de vendas antigas; produtos com quantidade controlada compõem o valor do estoque pelo custo; produtos vendidos por peso ficam fora dessa soma por não possuírem quantidade cadastrada; o histórico visual mantém somente as vendas do mês atual.
+
+Alternativa descartada: tratar faturamento como lucro ou recalcular vendas antigas pelo custo atual, pois ambas as opções produziriam indicadores financeiros incorretos.

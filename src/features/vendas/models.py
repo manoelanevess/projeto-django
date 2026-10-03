@@ -2,6 +2,7 @@
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from features.produtos.models import Produto
@@ -24,6 +25,11 @@ class Venda(models.Model):
     NomeCliente = models.CharField(max_length=80, blank=True)
     FormaPagamento = models.CharField(max_length=10, choices=OpcoesFormaPagamento)
     Total = models.DecimalField(max_digits=12, decimal_places=2)
+    Lucro = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
     ValorRecebido = models.DecimalField(
         max_digits=12,
         decimal_places=2,
@@ -60,8 +66,18 @@ class ItemVenda(models.Model):
     NomeProduto = models.CharField(max_length=120)
     UnidadeVenda = models.CharField(max_length=12)
     Quantidade = models.DecimalField(max_digits=12, decimal_places=3)
+    CustoUnitario = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
     PrecoUnitario = models.DecimalField(max_digits=10, decimal_places=2)
     Subtotal = models.DecimalField(max_digits=12, decimal_places=2)
+    Lucro = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
 
     class Meta:
         ordering = ["id"]
@@ -70,3 +86,40 @@ class ItemVenda(models.Model):
 
     def __str__(self):
         return f"{self.NomeProduto} - {self.Quantidade}"
+
+
+class ResumoVendaMensal(models.Model):
+    Proprietario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="ResumosVendasMensais",
+    )
+    Ano = models.PositiveSmallIntegerField()
+    Mes = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(12)]
+    )
+    QuantidadeVendas = models.PositiveIntegerField(default=0)
+    TotalVendido = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
+    Lucro = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
+
+    class Meta:
+        ordering = ["-Ano", "-Mes"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["Proprietario", "Ano", "Mes"],
+                name="ResumoVendaMensalUnico",
+            )
+        ]
+        verbose_name = "resumo mensal de vendas"
+        verbose_name_plural = "resumos mensais de vendas"
+
+    def __str__(self):
+        return f"{self.Mes:02d}/{self.Ano} - R$ {self.TotalVendido}"

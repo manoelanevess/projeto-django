@@ -201,8 +201,9 @@ def ComponenteFormularioProduto(Request, ProdutoId=None):
             {RenderizarCampo(Formulario, "Categoria", "Categoria", "Ex.: Alimentos, ferramentas ou papelaria.")}
             {RenderizarCampo(Formulario, "Marca", "Marca", "Opcional para produtos sem marca definida.")}
             {RenderizarCampo(Formulario, "Fornecedor", "Fornecedor", "Escolha um fornecedor cadastrado na área Fornecedores.")}
-            {RenderizarCampo(Formulario, "UnidadeVenda", "Forma de venda")}
+            {RenderizarCampo(Formulario, "PrecoCusto", "Preço de custo (R$)")}
             {RenderizarCampo(Formulario, "PrecoVenda", "Preço de venda (R$)")}
+            {RenderizarCampo(Formulario, "UnidadeVenda", "Forma de venda")}
             {RenderizarCampo(Formulario, "QuantidadeEstoque", "Quantidade em estoque")}
             {RenderizarCampo(Formulario, "EstoqueMinimo", "Estoque mínimo")}
 

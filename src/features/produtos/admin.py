@@ -14,6 +14,7 @@ class ProdutoAdmin(admin.ModelAdmin):
         "UnidadeVenda",
         "QuantidadeEstoque",
         "Disponivel",
+        "PrecoCusto",
         "PrecoVenda",
         "Ativo",
     )

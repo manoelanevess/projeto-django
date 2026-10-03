@@ -52,8 +52,15 @@ def RenderizarProdutos(Produtos, TokenCsrf):
     LinhasProdutos = []
 
     for ProdutoEstoque in Produtos:
-        ClasseSituacao = "Disponivel" if ProdutoEstoque["Disponivel"] else "Indisponivel"
-        Situacao = "Disponível" if ProdutoEstoque["Disponivel"] else "Indisponível"
+        if not ProdutoEstoque["Disponivel"]:
+            ClasseSituacao = "Indisponivel"
+            Situacao = "Indisponível"
+        elif ProdutoEstoque["EstoqueBaixo"]:
+            ClasseSituacao = "Alerta"
+            Situacao = "Estoque baixo"
+        else:
+            ClasseSituacao = "Disponivel"
+            Situacao = "Disponível"
         EstoqueMinimo = ""
 
         if ProdutoEstoque["ControlaQuantidade"]:
@@ -76,6 +83,7 @@ def RenderizarProdutos(Produtos, TokenCsrf):
                     <span>{escape(ProdutoEstoque["EstoqueDescricao"])}</span>
                     {EstoqueMinimo}
                 </td>
+                <td>R$ {escape(ProdutoEstoque["PrecoCustoFormatado"])}</td>
                 <td>R$ {escape(ProdutoEstoque["PrecoVendaFormatado"])}</td>
                 <td><span class="SituacaoProduto {ClasseSituacao}">{Situacao}</span></td>
                 <td>
@@ -116,7 +124,8 @@ def RenderizarProdutos(Produtos, TokenCsrf):
                     <th>Fornecedor</th>
                     <th>Venda</th>
                     <th>Estoque</th>
-                    <th>Preço</th>
+                    <th>Preço de custo</th>
+                    <th>Preço de venda</th>
                     <th>Situação</th>
                     <th><span class="SomenteLeitorTela">Ações</span></th>
                 </tr>
@@ -195,7 +204,7 @@ def ComponenteEstoque(Request):
         .MensagemOperacao.Erro {{ border-color: #c53b32; color: #8b241e; background: #fff0ef; }}
 
         .TabelaEstoque {{ overflow-x: auto; }}
-        .TabelaEstoque table {{ min-width: 1050px; }}
+        .TabelaEstoque table {{ min-width: 1060px; }}
         .DadosProduto strong,
         .DadosProduto small,
         .DadosEstoque span,
@@ -213,6 +222,7 @@ def ComponenteEstoque(Request):
             font-weight: 700;
         }}
         .SituacaoProduto.Disponivel {{ color: #0c614f; background: #dff4ed; }}
+        .SituacaoProduto.Alerta {{ color: #8a5200; background: #fff1d6; }}
         .SituacaoProduto.Indisponivel {{ color: #8b241e; background: #fde9e7; }}
 
         .AcoesProduto {{ display: flex; justify-content: flex-end; gap: 6px; }}

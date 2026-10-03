@@ -36,6 +36,9 @@ Roteamento: MPA com `path()` no arquivo `src/configuracao/urls.py`.
 - Manter três carrinhos independentes na sessão e reduzir o estoque quantitativo apenas ao concluir a venda.
 - Produtos vendidos por quilograma usam disponibilidade, sem quantidade exata nem baixa numérica no estoque.
 - Produtos devem selecionar um fornecedor ativo já cadastrado; fornecedores são inativados, não apagados fisicamente.
+- Produtos possuem preço de custo e de venda; carrinhos mostram somente a venda, e tabelas administrativas mostram ambos.
+- O lucro da venda usa o custo copiado no momento da conclusão, sem recálculo retroativo.
+- Vendas de meses encerrados são consolidadas antes da remoção dos detalhes para preservar os indicadores anuais.
 - Tratar o nome do cliente no carrinho como opcional e temporário: copiar para a venda concluída e limpar ao concluir ou cancelar o atendimento.
 - Usar `Decimal` para valores monetários, quantidades e pesos; não usar `float` nesses cálculos.
 - Manter a consulta de estoque da Página Principal somente leitura; inclusão, edição e exclusão ficam na área Estoque e pertencem à feature Produtos.

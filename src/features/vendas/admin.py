@@ -13,8 +13,10 @@ class ItemVendaInline(admin.TabularInline):
         "NomeProduto",
         "UnidadeVenda",
         "Quantidade",
+        "CustoUnitario",
         "PrecoUnitario",
         "Subtotal",
+        "Lucro",
     )
 
 
@@ -26,6 +28,7 @@ class VendaAdmin(admin.ModelAdmin):
         "NomeCliente",
         "FormaPagamento",
         "Total",
+        "Lucro",
         "Troco",
         "Proprietario",
     )
@@ -36,6 +39,7 @@ class VendaAdmin(admin.ModelAdmin):
         "NomeCliente",
         "FormaPagamento",
         "Total",
+        "Lucro",
         "ValorRecebido",
         "Troco",
         "CriadaEm",
@@ -52,8 +56,10 @@ class ItemVendaAdmin(admin.ModelAdmin):
         "Venda",
         "NomeProduto",
         "Quantidade",
+        "CustoUnitario",
         "PrecoUnitario",
         "Subtotal",
+        "Lucro",
     )
     search_fields = ("NomeProduto", "Venda__NomeCliente")
 

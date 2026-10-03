@@ -32,6 +32,7 @@ class TesteManutencaoEstoque(TestCase):
             UnidadeVenda=Produto.UNIDADE,
             QuantidadeEstoque=Decimal("12.000"),
             EstoqueMinimo=Decimal("3.000"),
+            PrecoCusto=Decimal("5.00"),
             PrecoVenda=Decimal("8.50"),
         )
 
@@ -49,6 +50,7 @@ class TesteManutencaoEstoque(TestCase):
                 "Marca": "Produto a granel",
                 "Fornecedor": self.Hortifruti.id,
                 "UnidadeVenda": Produto.QUILOGRAMA,
+                "PrecoCusto": "4.20",
                 "PrecoVenda": "6.90",
                 "QuantidadeEstoque": "99",
                 "EstoqueMinimo": "5",
@@ -96,6 +98,7 @@ class TesteManutencaoEstoque(TestCase):
                 "Marca": "Sabor da Terra",
                 "Fornecedor": self.Distribuidora.id,
                 "UnidadeVenda": Produto.UNIDADE,
+                "PrecoCusto": "5.75",
                 "PrecoVenda": "9.25",
                 "QuantidadeEstoque": "15",
                 "EstoqueMinimo": "4",
@@ -106,6 +109,7 @@ class TesteManutencaoEstoque(TestCase):
         self.Arroz.refresh_from_db()
         self.assertEqual(self.Arroz.Nome, "Arroz Branco 1 kg")
         self.assertEqual(self.Arroz.Categoria, "Alimentos")
+        self.assertEqual(self.Arroz.PrecoCusto, Decimal("5.75"))
         self.assertEqual(self.Arroz.QuantidadeEstoque, Decimal("15.000"))
 
     def test_ExclusaoLogicaPreservaProdutoEEscondeDaLista(self):
@@ -122,4 +126,18 @@ class TesteManutencaoEstoque(TestCase):
 
         self.assertContains(Resposta, "Dashboard")
         self.assertContains(Resposta, "Produtos cadastrados")
+        self.assertContains(Resposta, "Valor do estoque")
+        self.assertContains(Resposta, "R$ 60,00")
+        self.assertContains(Resposta, "Lucro hoje")
         self.assertContains(Resposta, "Vendas recentes")
+
+    def test_TabelasDeProdutosExibemCustoAoLadoDaVenda(self):
+        PaginaEstoque = self.client.get("/estoque")
+        PaginaPrincipal = self.client.get("/")
+
+        for Resposta in [PaginaEstoque, PaginaPrincipal]:
+            with self.subTest(Rota=Resposta.request["PATH_INFO"]):
+                self.assertContains(Resposta, "Preço de custo")
+                self.assertContains(Resposta, "Preço de venda")
+                self.assertContains(Resposta, "R$ 5,00")
+                self.assertContains(Resposta, "R$ 8,50")
