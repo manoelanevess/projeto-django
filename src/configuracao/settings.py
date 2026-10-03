@@ -69,7 +69,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "configuracao.wsgi.application"
+WSGI_APPLICATION = "src.configuracao.wsgi.application"
 
 DATABASES = {
     "default": {
