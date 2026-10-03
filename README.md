@@ -173,7 +173,7 @@ Alternativa descartada: repetir HTML e CSS de menu/topo dentro de cada feature.
 
 ## Decisão 08 — Autenticação sem cadastro público
 
-Data: 02/10/2026
+Data: 11/10/2026
 
 Contexto: o sistema será usado em um comércio específico e somente o proprietário terá acesso.
 
@@ -185,7 +185,7 @@ Alternativa descartada: cadastro público de usuários e controle de permissões
 
 ## Decisão 09 — Página Principal orientada ao atendimento
 
-Data: 02/10/2026
+Data: 11/10/2026
 
 Contexto: o proprietário precisa acessar rapidamente as tarefas usadas no balcão, principalmente a pesquisa de produtos e os atendimentos em andamento.
 
@@ -197,7 +197,7 @@ Alternativa descartada: manter os indicadores como conteúdo principal e exigir 
 
 ## Decisão 10 — Três carrinhos e baixa transacional do estoque
 
-Data: 02/10/2026
+Data: 11/10/2026
 
 Contexto: o comércio pode atender até três clientes ao mesmo tempo, com produtos vendidos por unidade ou por peso e pagamento em dinheiro ou PIX.
 
@@ -221,7 +221,7 @@ Alternativa descartada: manter apenas uma aba de carrinho por vez ou abrir pain�
 
 ## Decisão 12 — Experiência desktop como prioridade
 
-Data: 02/10/2026
+Data: 17/10/2026
 
 Contexto: o sistema será usado majoritariamente no computador do comércio, durante o atendimento no balcão.
 
@@ -233,7 +233,7 @@ Alternativa descartada: abordagem mobile-first, pois não corresponde ao princip
 
 ## Decisão 13 — Identificação opcional do cliente no carrinho
 
-Data: 02/10/2026
+Data: 17/10/2026
 
 Contexto: clientes conhecidos podem ser identificados durante o atendimento, mas a maioria das vendas não exige cadastro prévio do comprador.
 
@@ -245,7 +245,7 @@ Alternativa descartada: criar um cadastro obrigatório de clientes, pois aumenta
 
 ## Decisão 14 — Estoque unificado e Dashboard separado
 
-Data: 02/10/2026
+Data: 18/10/2026
 
 Contexto: o comércio trabalha com alimentos, rações, papelaria, ferramentas e itens vendidos por unidade, metro, peso ou preço fixo. A listagem de Produtos e o controle de Estoque representavam a mesma rotina de manutenção, enquanto os indicadores e o histórico de vendas possuíam função gerencial distinta.
 
