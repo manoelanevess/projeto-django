@@ -1,6 +1,6 @@
 """Regras financeiras e de retenção do histórico de vendas."""
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from django.db import transaction
@@ -10,8 +10,43 @@ from django.utils import timezone
 from .models import ResumoVendaMensal, Venda
 
 
+HoraInicioDiaComercial = 7
+
+
 def SomarCampo(Queryset, Campo):
     return Queryset.aggregate(Valor=Sum(Campo))["Valor"] or Decimal("0.00")
+
+
+def NormalizarDataHoraReferencia(DataReferencia=None):
+    FusoHorario = timezone.get_current_timezone()
+
+    if DataReferencia is None:
+        return timezone.localtime()
+
+    if isinstance(DataReferencia, datetime):
+        if timezone.is_naive(DataReferencia):
+            DataReferencia = timezone.make_aware(DataReferencia, FusoHorario)
+        return timezone.localtime(DataReferencia, FusoHorario)
+
+    return timezone.make_aware(
+        datetime.combine(DataReferencia, time(hour=12)),
+        FusoHorario,
+    )
+
+
+def ObterIntervaloDiaComercial(DataReferencia=None):
+    DataHoraLocal = NormalizarDataHoraReferencia(DataReferencia)
+    DiaComercial = DataHoraLocal.date()
+
+    if DataHoraLocal.hour < HoraInicioDiaComercial:
+        DiaComercial -= timedelta(days=1)
+
+    InicioDiaComercial = timezone.make_aware(
+        datetime.combine(DiaComercial, time(hour=HoraInicioDiaComercial)),
+        timezone.get_current_timezone(),
+    )
+    FimDiaComercial = InicioDiaComercial + timedelta(days=1)
+    return InicioDiaComercial, FimDiaComercial
 
 
 def ConsolidarVendasDeMesesAnteriores(DataReferencia=None):
@@ -70,9 +105,16 @@ def ConsolidarVendasDeMesesAnteriores(DataReferencia=None):
 
 
 def ObterResumoFinanceiro(Proprietario, DataReferencia=None):
-    Hoje = DataReferencia or timezone.localdate()
+    DataHoraLocal = NormalizarDataHoraReferencia(DataReferencia)
+    Hoje = DataHoraLocal.date()
+    InicioDiaComercial, FimDiaComercial = ObterIntervaloDiaComercial(
+        DataHoraLocal
+    )
     VendasProprietario = Venda.objects.filter(Proprietario=Proprietario)
-    VendasHoje = VendasProprietario.filter(CriadaEm__date=Hoje)
+    VendasHoje = VendasProprietario.filter(
+        CriadaEm__gte=InicioDiaComercial,
+        CriadaEm__lt=FimDiaComercial,
+    )
     VendasMes = VendasProprietario.filter(
         CriadaEm__year=Hoje.year,
         CriadaEm__month=Hoje.month,

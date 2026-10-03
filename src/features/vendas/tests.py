@@ -166,6 +166,38 @@ class TesteCarrinhosVenda(TestCase):
         self.assertContains(Resposta, "R$ 10,00")
         self.assertNotContains(Resposta, "Preço de custo")
 
+    def test_LucroHojeReiniciaAsSeteDaManha(self):
+        VendaAntesDaVirada = Venda.objects.create(
+            Proprietario=self.Usuario,
+            FormaPagamento=Venda.PIX,
+            Total=Decimal("10.00"),
+            Lucro=Decimal("3.00"),
+        )
+        VendaDepoisDaVirada = Venda.objects.create(
+            Proprietario=self.Usuario,
+            FormaPagamento=Venda.PIX,
+            Total=Decimal("20.00"),
+            Lucro=Decimal("8.00"),
+        )
+        Venda.objects.filter(pk=VendaAntesDaVirada.pk).update(
+            CriadaEm=timezone.make_aware(datetime(2026, 10, 2, 6, 59))
+        )
+        Venda.objects.filter(pk=VendaDepoisDaVirada.pk).update(
+            CriadaEm=timezone.make_aware(datetime(2026, 10, 2, 7, 0))
+        )
+
+        ResumoAntesDasSete = ObterResumoFinanceiro(
+            self.Usuario,
+            timezone.make_aware(datetime(2026, 10, 2, 6, 59)),
+        )
+        ResumoDepoisDasSete = ObterResumoFinanceiro(
+            self.Usuario,
+            timezone.make_aware(datetime(2026, 10, 2, 8, 0)),
+        )
+
+        self.assertEqual(ResumoAntesDasSete["LucroHoje"], Decimal("3.00"))
+        self.assertEqual(ResumoDepoisDasSete["LucroHoje"], Decimal("8.00"))
+
     def test_EstoqueInsuficienteImpedeTodaABaixa(self):
         self.AdicionarProduto("2", self.Arroz, "2")
         self.AdicionarProduto("2", self.Batata, "1")

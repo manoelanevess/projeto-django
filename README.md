@@ -290,3 +290,15 @@ Decisão: cadastrar preço de custo e preço de venda em cada produto. As tabela
 Consequências: alterar o custo de um produto não modifica o lucro de vendas antigas; produtos com quantidade controlada compõem o valor do estoque pelo custo; produtos vendidos por peso ficam fora dessa soma por não possuírem quantidade cadastrada; o histórico visual mantém somente as vendas do mês atual.
 
 Alternativa descartada: tratar faturamento como lucro ou recalcular vendas antigas pelo custo atual, pois ambas as opções produziriam indicadores financeiros incorretos.
+
+## Decisão 18 — Virada diária dos indicadores às 07:00
+
+Data: 02/10/2026
+
+Contexto: o comércio funciona das 08:00 às 20:00 e o lucro diário precisa estar zerado antes do início do atendimento, sem dividir vendas de um mesmo turno por causa da meia-noite.
+
+Decisão: considerar o dia comercial no intervalo entre 07:00 de um dia e 06:59 do dia seguinte para calcular o lucro e o total vendido de hoje.
+
+Consequências: vendas realizadas antes das 07:00 ainda pertencem ao dia comercial anterior; a partir das 07:00 os indicadores diários iniciam um novo período, enquanto os totais mensal e anual continuam seguindo o calendário.
+
+Alternativa descartada: reiniciar os indicadores à meia-noite, pois essa virada não representa a rotina de funcionamento do comércio.
