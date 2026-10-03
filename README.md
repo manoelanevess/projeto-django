@@ -85,6 +85,30 @@ Crie a conta do proprietário:
 python manage.py createsuperuser
 ```
 
+## Publicação
+
+A aplicação completa, incluindo as páginas HTML e as rotas do Django, é publicada em um único projeto na Vercel. O banco de produção usa PostgreSQL no Neon.
+
+Variáveis de produção esperadas na Vercel:
+
+```text
+DJANGO_SECRET_KEY=<segredo-exclusivo-de-producao>
+DJANGO_DEBUG=0
+DJANGO_ALLOWED_HOSTS=.vercel.app
+DJANGO_CSRF_TRUSTED_ORIGINS=https://*.vercel.app
+DJANGO_SECURE_SSL_REDIRECT=1
+DJANGO_SECURE_HSTS_SECONDS=31536000
+POSTGRES_DB=<banco-do-neon>
+POSTGRES_USER=<usuario-do-neon>
+POSTGRES_PASSWORD=<senha-do-neon>
+POSTGRES_HOST=<host-pooler-do-neon>
+POSTGRES_PORT=5432
+POSTGRES_SSLMODE=require
+POSTGRES_CONN_MAX_AGE=0
+```
+
+Antes da primeira publicação, aplique as migrations no Neon. A migração inicial de dados leva usuário, fornecedores e produtos do ambiente local, sem copiar vendas, itens de venda, resumos financeiros ou sessões.
+
 ## Decisão 01 — Organização por feature
 
 Data: 02/09/2026
@@ -326,3 +350,15 @@ Decisão: tornar cada linha de venda recente expansível no próprio histórico.
 Consequências: até cinco vendas recentes carregam seus itens em uma consulta otimizada e permanecem fechadas até o clique; o controle também funciona por teclado no botão de expansão.
 
 Alternativa descartada: abrir uma página separada para cada venda, pois isso interromperia a consulta rápida e adicionaria navegação desnecessária.
+
+## Decisão 21 — Aplicação completa na Vercel e PostgreSQL no Neon
+
+Data: 03/10/2026
+
+Contexto: o projeto usa Django para entregar as páginas HTML e executar toda a lógica do sistema, sem um frontend independente. A aplicação precisa ficar disponível na internet e usar um banco PostgreSQL gerenciado.
+
+Decisão: publicar frontend e backend juntos em um único projeto Django na Vercel e usar um banco PostgreSQL no Neon com conexão agrupada e SSL obrigatório. Na carga inicial de produção, migrar usuário, fornecedores e produtos, sem levar vendas, itens de venda, resumos financeiros ou sessões do ambiente local.
+
+Consequências: um único deploy mantém navegação e backend na mesma origem; o banco de produção começa com o cadastro necessário para operar, mas com Dashboard e histórico de vendas zerados; segredos e dados de conexão ficam somente nas variáveis de ambiente da Vercel.
+
+Alternativa descartada: separar as páginas Django em outro projeto de frontend ou copiar o histórico de testes para produção, pois isso adicionaria complexidade sem benefício para a arquitetura atual.

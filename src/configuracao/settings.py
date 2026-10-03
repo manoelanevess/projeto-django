@@ -11,7 +11,21 @@ load_dotenv(CaminhoEnv)
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "django-insecure-projeto-estoque-dev")
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
-ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
+HostsPermitidos = os.environ.get(
+    "DJANGO_ALLOWED_HOSTS",
+    "127.0.0.1,localhost",
+).split(",")
+ALLOWED_HOSTS = [Host.strip() for Host in HostsPermitidos if Host.strip()]
+
+OrigensConfiaveis = os.environ.get(
+    "DJANGO_CSRF_TRUSTED_ORIGINS",
+    "",
+).split(",")
+CSRF_TRUSTED_ORIGINS = [
+    Origem.strip()
+    for Origem in OrigensConfiaveis
+    if Origem.strip()
+]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -68,10 +82,35 @@ DATABASES = {
     }
 }
 
+ModoSslPostgres = os.environ.get("POSTGRES_SSLMODE", "").strip()
+if ModoSslPostgres:
+    DATABASES["default"]["OPTIONS"] = {"sslmode": ModoSslPostgres}
+
+DATABASES["default"]["CONN_MAX_AGE"] = int(
+    os.environ.get("POSTGRES_CONN_MAX_AGE", "0")
+)
+DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
+
 LANGUAGE_CODE = "pt-br"
 TIME_ZONE = "America/Sao_Paulo"
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SECURE_SSL_REDIRECT = os.environ.get(
+    "DJANGO_SECURE_SSL_REDIRECT",
+    "0" if DEBUG else "1",
+) == "1"
+SECURE_HSTS_SECONDS = int(
+    os.environ.get(
+        "DJANGO_SECURE_HSTS_SECONDS",
+        "0" if DEBUG else "31536000",
+    )
+)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
