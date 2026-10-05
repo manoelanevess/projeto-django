@@ -5,7 +5,7 @@ from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
-from features.produtos.models import Produto
+from features.produtos.models import LoteEstoque, Produto
 
 
 class Venda(models.Model):
@@ -62,6 +62,13 @@ class ItemVenda(models.Model):
         Produto,
         on_delete=models.PROTECT,
         related_name="ItensVendidos",
+    )
+    Lote = models.ForeignKey(
+        LoteEstoque,
+        on_delete=models.SET_NULL,
+        related_name="ItensVendidos",
+        null=True,
+        blank=True,
     )
     NomeProduto = models.CharField(max_length=120)
     UnidadeVenda = models.CharField(max_length=12)

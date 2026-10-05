@@ -1,7 +1,30 @@
 """Acesso aos dados persistidos da feature de produtos."""
-from django.db.models import F, Q
+from django.db.models import F, Prefetch, Q
 
-from .models import Produto
+from .models import LoteEstoque, Produto
+
+
+def ObterPrefetchLotesAtivos():
+    return Prefetch(
+        "LotesEstoque",
+        queryset=LoteEstoque.objects.filter(Ativo=True)
+        .select_related("Fornecedor")
+        .order_by("CriadoEm", "id"),
+        to_attr="LotesAtivos",
+    )
+
+
+def ObterLotesDisponiveisProduto(ProdutoVenda):
+    Lotes = getattr(ProdutoVenda, "LotesAtivos", None)
+
+    if Lotes is None:
+        Lotes = list(
+            ProdutoVenda.LotesEstoque.filter(Ativo=True)
+            .select_related("Fornecedor")
+            .order_by("CriadoEm", "id")
+        )
+
+    return [Lote for Lote in Lotes if Lote.EstaDisponivelParaVenda()]
 
 
 def MontarFiltroProdutosDisponiveis():
@@ -11,7 +34,11 @@ def MontarFiltroProdutosDisponiveis():
 
 
 def BuscarProdutos(Busca="", Estoque="", Categoria="", Fornecedor=""):
-    Produtos = Produto.objects.filter(Ativo=True).select_related("Fornecedor")
+    Produtos = (
+        Produto.objects.filter(Ativo=True)
+        .select_related("Fornecedor")
+        .prefetch_related(ObterPrefetchLotesAtivos())
+    )
 
     if Busca:
         Produtos = Produtos.filter(
@@ -19,6 +46,10 @@ def BuscarProdutos(Busca="", Estoque="", Categoria="", Fornecedor=""):
             | Q(Categoria__icontains=Busca)
             | Q(Marca__icontains=Busca)
             | Q(Fornecedor__Nome__icontains=Busca)
+            | Q(
+                LotesEstoque__Fornecedor__Nome__icontains=Busca,
+                LotesEstoque__Ativo=True,
+            )
         )
 
     if Categoria:
@@ -26,7 +57,13 @@ def BuscarProdutos(Busca="", Estoque="", Categoria="", Fornecedor=""):
 
     if Fornecedor:
         if str(Fornecedor).isdigit():
-            Produtos = Produtos.filter(Fornecedor_id=Fornecedor)
+            Produtos = Produtos.filter(
+                Q(Fornecedor_id=Fornecedor)
+                | Q(
+                    LotesEstoque__Fornecedor_id=Fornecedor,
+                    LotesEstoque__Ativo=True,
+                )
+            )
         else:
             Produtos = Produtos.none()
 
@@ -39,7 +76,7 @@ def BuscarProdutos(Busca="", Estoque="", Categoria="", Fornecedor=""):
     elif Estoque == "indisponivel":
         Produtos = Produtos.exclude(MontarFiltroProdutosDisponiveis())
 
-    return Produtos.order_by("Nome")
+    return Produtos.distinct().order_by("Nome")
 
 
 def BuscarCategoriasProdutos():
@@ -57,13 +94,20 @@ def BuscarProdutosParaVenda(Busca):
         return Produto.objects.none()
 
     return (
-        Produto.objects.select_related("Fornecedor").filter(
+        Produto.objects.select_related("Fornecedor")
+        .prefetch_related(ObterPrefetchLotesAtivos())
+        .filter(
             Q(Nome__icontains=Busca)
             | Q(Categoria__icontains=Busca)
             | Q(Marca__icontains=Busca)
-            | Q(Fornecedor__Nome__icontains=Busca),
+            | Q(Fornecedor__Nome__icontains=Busca)
+            | Q(
+                LotesEstoque__Fornecedor__Nome__icontains=Busca,
+                LotesEstoque__Ativo=True,
+            ),
             Ativo=True,
         )
         .filter(MontarFiltroProdutosDisponiveis())
+        .distinct()
         .order_by("Nome")[:20]
     )

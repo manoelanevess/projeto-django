@@ -1,7 +1,7 @@
 """Regras de consulta e apresentação da feature de produtos."""
 from decimal import Decimal
 
-from .ApiProduto import BuscarProdutos
+from .ApiProduto import BuscarProdutos, ObterLotesDisponiveisProduto
 
 
 def FormatarQuantidade(Quantidade):
@@ -48,32 +48,61 @@ def GerarResumoProdutos(Busca="", Estoque="", Categoria="", Fornecedor=""):
         for Produto in ProdutosFiltrados
         if Produto.EstaDisponivelParaVenda()
     ]
-    ValorTotalCusto = sum(
-        (
-            Produto.QuantidadeEstoque * Produto.PrecoCusto
-            for Produto in ProdutosFiltrados
-            if Produto.ControlaQuantidadeEstoque()
-            and Produto.QuantidadeEstoque is not None
-        ),
-        Decimal("0.00"),
-    )
-    ValorTotalVenda = sum(
-        (
-            Produto.QuantidadeEstoque * Produto.PrecoVenda
-            for Produto in ProdutosFiltrados
-            if Produto.ControlaQuantidadeEstoque()
-            and Produto.QuantidadeEstoque is not None
-        ),
-        Decimal("0.00"),
-    )
-    ProdutosFormatados = [
-        {
+    ValorTotalCusto = Decimal("0.00")
+    ValorTotalVenda = Decimal("0.00")
+    ProdutosFormatados = []
+
+    for Produto in ProdutosFiltrados:
+        LotesAtivos = getattr(Produto, "LotesAtivos", [])
+        LotesDisponiveis = ObterLotesDisponiveisProduto(Produto)
+        LoteReferencia = (
+            LotesDisponiveis[-1]
+            if LotesDisponiveis
+            else LotesAtivos[-1]
+            if LotesAtivos
+            else None
+        )
+
+        if Produto.ControlaQuantidadeEstoque():
+            for Lote in LotesAtivos:
+                QuantidadeLote = Lote.QuantidadeDisponivel or Decimal("0.000")
+                ValorTotalCusto += QuantidadeLote * Lote.PrecoCusto
+                ValorTotalVenda += QuantidadeLote * Lote.PrecoVenda
+
+        PrecoCusto = (
+            LoteReferencia.PrecoCusto if LoteReferencia else Produto.PrecoCusto
+        )
+        PrecoVenda = (
+            LoteReferencia.PrecoVenda if LoteReferencia else Produto.PrecoVenda
+        )
+        FornecedorReferencia = (
+            LoteReferencia.Fornecedor if LoteReferencia else Produto.Fornecedor
+        )
+        LotesFormatados = [
+            {
+                "Id": Lote.id,
+                "Fornecedor": Lote.Fornecedor.Nome,
+                "Quantidade": Lote.QuantidadeDisponivel,
+                "EstoqueDescricao": (
+                    Lote.ObterDescricaoEstoque()
+                    if Produto.EhControladoPorDisponibilidade()
+                    else f"{FormatarQuantidade(Lote.QuantidadeDisponivel)} {Produto.ObterUnidadeResumida()}"
+                ),
+                "PrecoCusto": Lote.PrecoCusto,
+                "PrecoCustoFormatado": FormatarValorMoeda(Lote.PrecoCusto),
+                "PrecoVenda": Lote.PrecoVenda,
+                "PrecoVendaFormatado": FormatarValorMoeda(Lote.PrecoVenda),
+                "Disponivel": Lote.EstaDisponivelParaVenda(),
+            }
+            for Lote in LotesAtivos
+        ]
+        ProdutosFormatados.append({
             "Id": Produto.id,
             "Nome": Produto.Nome,
             "Categoria": Produto.Categoria or "Sem categoria",
             "Marca": Produto.Marca or "Sem marca",
-            "Fornecedor": Produto.Fornecedor.Nome,
-            "FornecedorId": Produto.Fornecedor_id,
+            "Fornecedor": FornecedorReferencia.Nome,
+            "FornecedorId": FornecedorReferencia.id,
             "UnidadeVenda": Produto.UnidadeVenda,
             "TipoVenda": Produto.get_UnidadeVenda_display(),
             "ControlaQuantidade": Produto.ControlaQuantidadeEstoque(),
@@ -88,14 +117,15 @@ def GerarResumoProdutos(Busca="", Estoque="", Categoria="", Fornecedor=""):
             "QuantidadeFormatada": FormatarQuantidade(Produto.QuantidadeEstoque),
             "EstoqueMinimo": Produto.EstoqueMinimo,
             "EstoqueMinimoFormatado": FormatarQuantidade(Produto.EstoqueMinimo),
-            "PrecoCusto": Produto.PrecoCusto,
-            "PrecoCustoFormatado": FormatarValorMoeda(Produto.PrecoCusto),
-            "PrecoVenda": Produto.PrecoVenda,
-            "PrecoVendaFormatado": FormatarValorMoeda(Produto.PrecoVenda),
+            "PrecoCusto": PrecoCusto,
+            "PrecoCustoFormatado": FormatarValorMoeda(PrecoCusto),
+            "PrecoVenda": PrecoVenda,
+            "PrecoVendaFormatado": FormatarValorMoeda(PrecoVenda),
             "Unidade": Produto.ObterUnidadeResumida(),
-        }
-        for Produto in ProdutosFiltrados
-    ]
+            "Lotes": LotesFormatados,
+            "QuantidadeLotes": len(LotesAtivos),
+            "QuantidadeLotesDisponiveis": len(LotesDisponiveis),
+        })
 
     return {
         "Produtos": ProdutosFormatados,

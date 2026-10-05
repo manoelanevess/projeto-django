@@ -27,7 +27,11 @@ def BuscarFornecedoresAtivos():
 
 def BuscarFornecedoresParaFiltroEstoque():
     return (
-        Fornecedor.objects.filter(Q(Ativo=True) | Q(Produtos__Ativo=True))
+        Fornecedor.objects.filter(
+            Q(Ativo=True)
+            | Q(Produtos__Ativo=True)
+            | Q(LotesEstoque__Produto__Ativo=True, LotesEstoque__Ativo=True)
+        )
         .distinct()
         .order_by("Nome")
     )

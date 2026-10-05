@@ -9,7 +9,10 @@ from django.urls import reverse as ObterRota
 from django.views.decorators.http import require_POST as ExigirPost
 
 from componentes.LayoutBase import RenderizarLayoutBase
-from features.produtos.ApiProduto import BuscarProdutosParaVenda
+from features.produtos.ApiProduto import (
+    BuscarProdutosParaVenda,
+    ObterLotesDisponiveisProduto,
+)
 from features.produtos.LogicaProduto import FormatarQuantidade, FormatarValorMoeda
 
 from .LogicaCarrinho import (
@@ -129,53 +132,57 @@ def RenderizarResultadosBusca(ProdutosEncontrados, TokenCsrf, NumeroCarrinho, Bu
         NomeSeguro = escape(ProdutoVenda.Nome)
         CategoriaSegura = escape(ProdutoVenda.Categoria or "Sem categoria")
         MarcaSegura = escape(ProdutoVenda.Marca or "Sem marca")
-        FornecedorSeguro = escape(ProdutoVenda.Fornecedor.Nome)
         Unidade = ProdutoVenda.ObterUnidadeResumida()
-        Estoque = (
-            escape(ProdutoVenda.ObterDescricaoEstoque())
-            if ProdutoVenda.EhControladoPorDisponibilidade()
-            else f"{FormatarQuantidade(ProdutoVenda.QuantidadeEstoque)} {Unidade}"
-        )
-        Preco = FormatarValorMoeda(ProdutoVenda.PrecoVenda)
         Passo = ProdutoVenda.ObterPassoVenda()
         QuantidadeInicial = ProdutoVenda.ObterQuantidadeInicialVenda()
         RotuloQuantidade = ProdutoVenda.ObterRotuloQuantidadeVenda()
-        AtributoMaximo = (
-            f'max="{ProdutoVenda.QuantidadeEstoque}"'
-            if ProdutoVenda.ControlaQuantidadeEstoque()
-            else ""
-        )
 
-        CartoesProdutos.append(
-            f"""
-            <article class="ProdutoResultado">
-                <div class="DadosProdutoResultado">
-                    <strong>{NomeSeguro}</strong>
-                    <span>{CategoriaSegura} · {MarcaSegura}</span>
-                    <small>{FornecedorSeguro} · R$ {Preco} / {Unidade} · Estoque: {Estoque}</small>
-                </div>
-                <form class="FormularioAdicionar" method="post" action="/carrinho/adicionar">
-                    <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
-                    <input type="hidden" name="carrinho" value="{NumeroCarrinho}">
-                    <input type="hidden" name="produto" value="{ProdutoVenda.id}">
-                    <input type="hidden" name="busca" value="{escape(Busca)}">
-                    <label for="Quantidade-{ProdutoVenda.id}">{RotuloQuantidade}</label>
-                    <input
-                        id="Quantidade-{ProdutoVenda.id}"
-                        class="CampoQuantidade"
-                        type="number"
-                        name="quantidade"
-                        min="{Passo}"
-                        {AtributoMaximo}
-                        step="{Passo}"
-                        value="{QuantidadeInicial}"
-                        required
-                    >
-                    <button class="BotaoPrimario" type="submit">Adicionar</button>
-                </form>
-            </article>
-            """
-        )
+        for LoteVenda in ObterLotesDisponiveisProduto(ProdutoVenda):
+            FornecedorSeguro = escape(LoteVenda.Fornecedor.Nome)
+            Estoque = (
+                escape(LoteVenda.ObterDescricaoEstoque())
+                if ProdutoVenda.EhControladoPorDisponibilidade()
+                else f"{FormatarQuantidade(LoteVenda.QuantidadeDisponivel)} {Unidade}"
+            )
+            PrecoCusto = FormatarValorMoeda(LoteVenda.PrecoCusto)
+            PrecoVenda = FormatarValorMoeda(LoteVenda.PrecoVenda)
+            AtributoMaximo = (
+                f'max="{LoteVenda.QuantidadeDisponivel}"'
+                if ProdutoVenda.ControlaQuantidadeEstoque()
+                else ""
+            )
+
+            CartoesProdutos.append(
+                f"""
+                <article class="ProdutoResultado">
+                    <div class="DadosProdutoResultado">
+                        <strong>{NomeSeguro}</strong>
+                        <span>{CategoriaSegura} · {MarcaSegura} · Lote #{LoteVenda.id}</span>
+                        <small>{FornecedorSeguro} · Custo R$ {PrecoCusto} · Venda R$ {PrecoVenda} / {Unidade} · Estoque: {Estoque}</small>
+                    </div>
+                    <form class="FormularioAdicionar" method="post" action="/carrinho/adicionar">
+                        <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
+                        <input type="hidden" name="carrinho" value="{NumeroCarrinho}">
+                        <input type="hidden" name="produto" value="{ProdutoVenda.id}">
+                        <input type="hidden" name="lote" value="{LoteVenda.id}">
+                        <input type="hidden" name="busca" value="{escape(Busca)}">
+                        <label for="Quantidade-{ProdutoVenda.id}-{LoteVenda.id}">{RotuloQuantidade}</label>
+                        <input
+                            id="Quantidade-{ProdutoVenda.id}-{LoteVenda.id}"
+                            class="CampoQuantidade"
+                            type="number"
+                            name="quantidade"
+                            min="{Passo}"
+                            {AtributoMaximo}
+                            step="{Passo}"
+                            value="{QuantidadeInicial}"
+                            required
+                        >
+                        <button class="BotaoPrimario" type="submit">Adicionar</button>
+                    </form>
+                </article>
+                """
+            )
 
     return f'<section class="ListaResultadosVenda">{"".join(CartoesProdutos)}</section>'
 
@@ -187,32 +194,36 @@ def ComponentePesquisarProdutos(Request):
 
     for ProdutoVenda in ProdutosEncontrados:
         Unidade = ProdutoVenda.ObterUnidadeResumida()
-        Estoque = (
-            ProdutoVenda.ObterDescricaoEstoque()
-            if ProdutoVenda.EhControladoPorDisponibilidade()
-            else f"{FormatarQuantidade(ProdutoVenda.QuantidadeEstoque)} {Unidade}"
-        )
 
-        Produtos.append(
-            {
-                "Id": ProdutoVenda.id,
-                "Nome": ProdutoVenda.Nome,
-                "Categoria": ProdutoVenda.Categoria or "Sem categoria",
-                "Marca": ProdutoVenda.Marca or "Sem marca",
-                "Fornecedor": ProdutoVenda.Fornecedor.Nome,
-                "Unidade": Unidade,
-                "Estoque": Estoque,
-                "Preco": FormatarValorMoeda(ProdutoVenda.PrecoVenda),
-                "Passo": ProdutoVenda.ObterPassoVenda(),
-                "QuantidadeInicial": ProdutoVenda.ObterQuantidadeInicialVenda(),
-                "RotuloQuantidade": ProdutoVenda.ObterRotuloQuantidadeVenda(),
-                "EstoqueMaximo": (
-                    str(ProdutoVenda.QuantidadeEstoque)
-                    if ProdutoVenda.ControlaQuantidadeEstoque()
-                    else ""
-                ),
-            }
-        )
+        for LoteVenda in ObterLotesDisponiveisProduto(ProdutoVenda):
+            Estoque = (
+                LoteVenda.ObterDescricaoEstoque()
+                if ProdutoVenda.EhControladoPorDisponibilidade()
+                else f"{FormatarQuantidade(LoteVenda.QuantidadeDisponivel)} {Unidade}"
+            )
+
+            Produtos.append(
+                {
+                    "Id": ProdutoVenda.id,
+                    "LoteId": LoteVenda.id,
+                    "Nome": ProdutoVenda.Nome,
+                    "Categoria": ProdutoVenda.Categoria or "Sem categoria",
+                    "Marca": ProdutoVenda.Marca or "Sem marca",
+                    "Fornecedor": LoteVenda.Fornecedor.Nome,
+                    "Unidade": Unidade,
+                    "Estoque": Estoque,
+                    "PrecoCusto": FormatarValorMoeda(LoteVenda.PrecoCusto),
+                    "Preco": FormatarValorMoeda(LoteVenda.PrecoVenda),
+                    "Passo": ProdutoVenda.ObterPassoVenda(),
+                    "QuantidadeInicial": ProdutoVenda.ObterQuantidadeInicialVenda(),
+                    "RotuloQuantidade": ProdutoVenda.ObterRotuloQuantidadeVenda(),
+                    "EstoqueMaximo": (
+                        str(LoteVenda.QuantidadeDisponivel)
+                        if ProdutoVenda.ControlaQuantidadeEstoque()
+                        else ""
+                    ),
+                }
+            )
 
     return JsonResponse({"Produtos": Produtos})
 
@@ -230,11 +241,13 @@ def RenderizarItensCarrinho(ResumoCarrinho, TokenCsrf, NumeroCarrinho):
 
     for Item in ResumoCarrinho["Itens"]:
         ProdutoVenda = Item["Produto"]
+        LoteVenda = Item["Lote"]
         Linhas.append(
             f"""
             <tr>
                 <td>
                     <strong>{escape(ProdutoVenda.Nome)}</strong>
+                    <small>Lote #{LoteVenda.id} · {escape(LoteVenda.Fornecedor.Nome)}</small>
                     <small>{Item['QuantidadeFormatada']} {Item['Unidade']} × R$ {Item['PrecoFormatado']}</small>
                 </td>
                 <td>R$ {Item['SubtotalFormatado']}</td>
@@ -242,7 +255,7 @@ def RenderizarItensCarrinho(ResumoCarrinho, TokenCsrf, NumeroCarrinho):
                     <form method="post" action="/carrinho/remover">
                         <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
                         <input type="hidden" name="carrinho" value="{NumeroCarrinho}">
-                        <input type="hidden" name="produto" value="{ProdutoVenda.id}">
+                        <input type="hidden" name="item" value="{escape(Item['ChaveItem'])}">
                         <button class="BotaoRemover" type="submit" aria-label="Remover {escape(ProdutoVenda.Nome)}">×</button>
                     </form>
                 </td>
@@ -848,11 +861,11 @@ def ComponenteCarrinho(Request):
                     const Dados = CriarElemento("div", "DadosProdutoResultado");
                     Dados.append(
                         CriarElemento("strong", "", Produto.Nome),
-                        CriarElemento("span", "", `${{Produto.Categoria}} · ${{Produto.Marca}}`),
+                        CriarElemento("span", "", `${{Produto.Categoria}} · ${{Produto.Marca}} · Lote #${{Produto.LoteId}}`),
                         CriarElemento(
                             "small",
                             "",
-                            `${{Produto.Fornecedor}} · R$ ${{Produto.Preco}} / ${{Produto.Unidade}} · Estoque: ${{Produto.Estoque}}`,
+                            `${{Produto.Fornecedor}} · Custo R$ ${{Produto.PrecoCusto}} · Venda R$ ${{Produto.Preco}} / ${{Produto.Unidade}} · Estoque: ${{Produto.Estoque}}`,
                         ),
                     );
 
@@ -862,9 +875,10 @@ def ComponenteCarrinho(Request):
                     CriarCampoOculto(FormularioProduto, "csrfmiddlewaretoken", "{TokenCsrf}");
                     CriarCampoOculto(FormularioProduto, "carrinho", "{NumeroCarrinho}");
                     CriarCampoOculto(FormularioProduto, "produto", Produto.Id);
+                    CriarCampoOculto(FormularioProduto, "lote", Produto.LoteId);
                     CriarCampoOculto(FormularioProduto, "busca", Busca);
 
-                    const IdentificadorQuantidade = `Quantidade-${{Produto.Id}}`;
+                    const IdentificadorQuantidade = `Quantidade-${{Produto.Id}}-${{Produto.LoteId}}`;
                     const Rotulo = CriarElemento("label", "", Produto.RotuloQuantidade);
                     Rotulo.htmlFor = IdentificadorQuantidade;
 
@@ -1010,6 +1024,7 @@ def ComponenteAdicionarItem(Request):
             NumeroCarrinho,
             Request.POST.get("produto"),
             Request.POST.get("quantidade"),
+            Request.POST.get("lote"),
         )
         DefinirMensagem(Request, f"{ProdutoVenda.Nome} adicionado ao carrinho {NumeroCarrinho}.")
     except ValueError as Erro:
@@ -1028,7 +1043,7 @@ def ComponenteRemoverItem(Request):
     RemoverProdutoDoCarrinho(
         Request,
         NumeroCarrinho,
-        Request.POST.get("produto"),
+        Request.POST.get("item") or Request.POST.get("produto"),
     )
     DefinirMensagem(Request, f"Produto removido do carrinho {NumeroCarrinho}.")
     return RedirecionarAposAcao(Request, NumeroCarrinho)

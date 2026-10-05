@@ -6,7 +6,7 @@ from django.test import TestCase
 
 from features.fornecedor.models import Fornecedor
 
-from .models import Produto
+from .models import LoteEstoque, Produto
 
 
 class TesteManutencaoEstoque(TestCase):
@@ -93,24 +93,49 @@ class TesteManutencaoEstoque(TestCase):
         Resposta = self.client.post(
             f"/estoque/{self.Arroz.id}/editar",
             {
+                "acao": "salvar_produto",
                 "Nome": "Arroz Branco 1 kg",
                 "Categoria": "Alimentos",
                 "Marca": "Sabor da Terra",
-                "Fornecedor": self.Distribuidora.id,
                 "UnidadeVenda": Produto.UNIDADE,
-                "PrecoCusto": "5.75",
-                "PrecoVenda": "9.25",
-                "QuantidadeEstoque": "15",
                 "EstoqueMinimo": "4",
             },
         )
 
-        self.assertRedirects(Resposta, "/estoque")
+        self.assertRedirects(Resposta, f"/estoque/{self.Arroz.id}/editar")
         self.Arroz.refresh_from_db()
         self.assertEqual(self.Arroz.Nome, "Arroz Branco 1 kg")
         self.assertEqual(self.Arroz.Categoria, "Alimentos")
-        self.assertEqual(self.Arroz.PrecoCusto, Decimal("5.75"))
-        self.assertEqual(self.Arroz.QuantidadeEstoque, Decimal("15.000"))
+        self.assertEqual(self.Arroz.PrecoCusto, Decimal("5.00"))
+        self.assertEqual(self.Arroz.QuantidadeEstoque, Decimal("12.000"))
+
+    def test_AdicionaNovaEntradaSemAlterarLoteAnterior(self):
+        LoteAnterior = self.Arroz.LotesEstoque.get()
+
+        Resposta = self.client.post(
+            f"/estoque/{self.Arroz.id}/editar",
+            {
+                "acao": "adicionar_lote",
+                "Lote-Fornecedor": self.Distribuidora.id,
+                "Lote-PrecoCusto": "5.75",
+                "Lote-PrecoVenda": "9.25",
+                "Lote-QuantidadeEntrada": "6",
+            },
+        )
+
+        self.assertRedirects(Resposta, f"/estoque/{self.Arroz.id}/editar")
+        self.assertEqual(self.Arroz.LotesEstoque.count(), 2)
+        LoteAnterior.refresh_from_db()
+        self.assertEqual(LoteAnterior.QuantidadeDisponivel, Decimal("12.000"))
+        self.assertEqual(LoteAnterior.PrecoCusto, Decimal("5.00"))
+
+        NovoLote = LoteEstoque.objects.exclude(pk=LoteAnterior.pk).get()
+        self.assertEqual(NovoLote.QuantidadeDisponivel, Decimal("6.000"))
+        self.assertEqual(NovoLote.PrecoCusto, Decimal("5.75"))
+        self.assertEqual(NovoLote.PrecoVenda, Decimal("9.25"))
+        self.Arroz.refresh_from_db()
+        self.assertEqual(self.Arroz.QuantidadeEstoque, Decimal("18.000"))
+        self.assertContains(self.client.get(Resposta.url), "Entradas de estoque")
 
     def test_ExclusaoLogicaPreservaProdutoEEscondeDaLista(self):
         Resposta = self.client.post(f"/estoque/{self.Arroz.id}/excluir")

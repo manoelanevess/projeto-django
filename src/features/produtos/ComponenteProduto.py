@@ -1,6 +1,7 @@
 """Componentes de cadastro e manutenção de produtos."""
 from html import escape
 
+from django.db import transaction
 from django.http import HttpResponse
 from django.middleware.csrf import get_token as ObterTokenCsrf
 from django.shortcuts import get_object_or_404, redirect
@@ -8,8 +9,13 @@ from django.views.decorators.http import require_POST as ExigirPost
 
 from componentes.LayoutBase import RenderizarLayoutBase
 
-from .FormularioProduto import FormularioProduto
-from .models import Produto
+from .FormularioProduto import (
+    FormularioEdicaoProduto,
+    FormularioLoteEstoque,
+    FormularioProduto,
+)
+from .LogicaProduto import FormatarQuantidade, FormatarValorMoeda
+from .models import LoteEstoque, Produto
 
 
 ChaveMensagemProduto = "MensagemProduto"
@@ -49,17 +55,313 @@ def RenderizarCampo(Formulario, NomeCampo, Rotulo, Descricao=""):
     """
 
 
-def ComponenteFormularioProduto(Request, ProdutoId=None):
-    ProdutoEdicao = None
+def RenderizarLotesProduto(ProdutoEdicao, TokenCsrf):
+    Lotes = ProdutoEdicao.LotesEstoque.select_related("Fornecedor").order_by(
+        "-CriadoEm", "-id"
+    )
 
+    if not Lotes:
+        return """
+        <div class="EstadoLotesVazio">
+            Nenhuma entrada de estoque foi registrada para este produto.
+        </div>
+        """
+
+    Linhas = []
+
+    for Lote in Lotes:
+        if ProdutoEdicao.EhControladoPorDisponibilidade():
+            Saldo = "Disponível" if Lote.Disponivel else "Indisponível"
+        else:
+            Saldo = (
+                f"{FormatarQuantidade(Lote.QuantidadeDisponivel)} "
+                f"{ProdutoEdicao.ObterUnidadeResumida()}"
+            )
+
+        Situacao = "Ativo" if Lote.EstaDisponivelParaVenda() else "Encerrado"
+        Acao = ""
+
+        if Lote.Ativo:
+            Acao = f"""
+            <form
+                method="post"
+                action="/estoque/{ProdutoEdicao.id}/lotes/{Lote.id}/encerrar"
+                onsubmit="return confirm('Encerrar este lote? Ele deixará de aparecer no carrinho.');"
+            >
+                <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
+                <button class="BotaoEncerrarLote" type="submit">Encerrar</button>
+            </form>
+            """
+
+        Linhas.append(
+            f"""
+            <tr>
+                <td><strong>#{Lote.id}</strong><small>{Lote.CriadoEm.strftime('%d/%m/%Y')}</small></td>
+                <td>{escape(Lote.Fornecedor.Nome)}</td>
+                <td>R$ {FormatarValorMoeda(Lote.PrecoCusto)}</td>
+                <td>R$ {FormatarValorMoeda(Lote.PrecoVenda)}</td>
+                <td>{escape(Saldo)}</td>
+                <td><span class="SituacaoLote {'Ativo' if Lote.EstaDisponivelParaVenda() else 'Encerrado'}">{Situacao}</span></td>
+                <td>{Acao}</td>
+            </tr>
+            """
+        )
+
+    return f"""
+    <div class="TabelaLotes">
+        <table>
+            <thead>
+                <tr>
+                    <th>Lote</th>
+                    <th>Fornecedor</th>
+                    <th>Preço de custo</th>
+                    <th>Preço de venda</th>
+                    <th>Saldo</th>
+                    <th>Situação</th>
+                    <th><span class="SomenteLeitorTela">Ações</span></th>
+                </tr>
+            </thead>
+            <tbody>{''.join(Linhas)}</tbody>
+        </table>
+    </div>
+    """
+
+
+def ComponenteEditarProdutoComLotes(Request, ProdutoEdicao):
+    Acao = Request.POST.get("acao", "salvar_produto")
+    FormularioDados = FormularioEdicaoProduto(instance=ProdutoEdicao)
+    FormularioLote = FormularioLoteEstoque(ProdutoVenda=ProdutoEdicao, prefix="Lote")
+
+    if Request.method == "POST" and Acao == "adicionar_lote":
+        FormularioLote = FormularioLoteEstoque(
+            Request.POST,
+            ProdutoVenda=ProdutoEdicao,
+            prefix="Lote",
+        )
+
+        if FormularioLote.is_valid():
+            LoteCriado = FormularioLote.CriarLote()
+            DefinirMensagemProduto(
+                Request,
+                f"Lote #{LoteCriado.id} adicionado a {ProdutoEdicao.Nome}.",
+            )
+            return redirect("EditarProduto", ProdutoId=ProdutoEdicao.id)
+    elif Request.method == "POST":
+        FormularioDados = FormularioEdicaoProduto(
+            Request.POST,
+            instance=ProdutoEdicao,
+        )
+
+        if FormularioDados.is_valid():
+            FormularioDados.save()
+            DefinirMensagemProduto(
+                Request,
+                f"{ProdutoEdicao.Nome} foi atualizado com sucesso.",
+            )
+            return redirect("EditarProduto", ProdutoId=ProdutoEdicao.id)
+
+    TokenCsrf = ObterTokenCsrf(Request)
+    LotesHtml = RenderizarLotesProduto(ProdutoEdicao, TokenCsrf)
+    Mensagem = ConsumirMensagemProduto(Request)
+    MensagemHtml = ""
+
+    if Mensagem:
+        Tipo = "Erro" if Mensagem.get("Tipo") == "erro" else "Sucesso"
+        MensagemHtml = (
+            f'<div class="MensagemOperacao {Tipo}" role="status">'
+            f'{escape(Mensagem.get("Texto", ""))}</div>'
+        )
+
+    CampoEntrada = ""
+
+    if ProdutoEdicao.EhControladoPorDisponibilidade():
+        CampoDisponivel = FormularioLote["Disponivel"]
+        CampoEntrada = f"""
+        <div class="GrupoCampo GrupoCampoLargo">
+            <div class="ControleDisponibilidade">
+                {CampoDisponivel}
+                <label for="{CampoDisponivel.id_for_label}">
+                    Lote disponível para venda
+                    <small class="AjudaCampo">Desmarque quando o lote vendido por peso terminar.</small>
+                </label>
+            </div>
+            {RenderizarErrosCampo(FormularioLote, "Disponivel")}
+        </div>
+        """
+    else:
+        CampoEntrada = RenderizarCampo(
+            FormularioLote,
+            "QuantidadeEntrada",
+            "Quantidade recebida",
+            "O saldo antigo continuará separado neste produto.",
+        )
+
+    ErrosDados = "".join(
+        f'<div class="MensagemFormulario Erro">{escape(str(Erro))}</div>'
+        for Erro in FormularioDados.non_field_errors()
+    )
+    ErrosLote = "".join(
+        f'<div class="MensagemFormulario Erro">{escape(str(Erro))}</div>'
+        for Erro in FormularioLote.non_field_errors()
+    )
+    ConteudoPrincipal = f"""
+    <style>
+        .CabecalhoFormulario {{
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }}
+        .CabecalhoFormulario h1 {{ margin: 0; }}
+        .SecaoEdicaoProduto {{
+            margin-bottom: 22px;
+            padding: 22px;
+            border: 1px solid #d6e0e6;
+            border-radius: 6px;
+            background: #ffffff;
+            box-shadow: 0 10px 22px rgba(31, 49, 61, 0.07);
+        }}
+        .SecaoEdicaoProduto h2 {{ margin: 0 0 5px; font-size: 20px; }}
+        .SecaoEdicaoProduto > p {{ margin: 0 0 18px; color: #667482; }}
+        .GradeFormulario {{
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+        }}
+        .GrupoCampo {{ min-width: 0; }}
+        .GrupoCampo label {{
+            display: block;
+            margin-bottom: 7px;
+            color: #3f4f5f;
+            font-size: 13px;
+            font-weight: 700;
+        }}
+        .GrupoCampo .CampoFormulario {{ width: 100%; }}
+        .GrupoCampoLargo {{ grid-column: 1 / -1; }}
+        .AjudaCampo {{ display: block; margin-top: 6px; color: #667482; line-height: 1.35; }}
+        .ErroCampo {{ display: block; margin-top: 6px; color: #a12c25; font-size: 13px; }}
+        .AcoesFormulario {{
+            margin-top: 20px;
+            padding-top: 18px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            border-top: 1px solid #d9e2ec;
+        }}
+        .ControleDisponibilidade {{
+            min-height: 64px;
+            padding: 12px 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border: 1px solid #cbd6df;
+            border-radius: 6px;
+            background: #f7fafb;
+        }}
+        .ControleDisponibilidade label {{ margin: 0; cursor: pointer; }}
+        .CampoCheckbox {{ width: 18px; height: 18px; accent-color: #0784ca; }}
+        .TabelaLotes {{ margin-bottom: 22px; overflow-x: auto; }}
+        .TabelaLotes table {{ min-width: 820px; box-shadow: none; }}
+        .TabelaLotes td strong,
+        .TabelaLotes td small {{ display: block; }}
+        .TabelaLotes td small {{ margin-top: 3px; color: #667482; }}
+        .SituacaoLote {{
+            display: inline-flex;
+            min-height: 26px;
+            padding: 0 9px;
+            align-items: center;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+        }}
+        .SituacaoLote.Ativo {{ color: #0c614f; background: #dff4ed; }}
+        .SituacaoLote.Encerrado {{ color: #6b7783; background: #e9eef1; }}
+        .BotaoEncerrarLote {{
+            min-height: 34px;
+            padding: 0 11px;
+            border: 1px solid #d6a6a1;
+            border-radius: 5px;
+            color: #972d26;
+            background: #fff3f2;
+            font: inherit;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+        }}
+        .EstadoLotesVazio {{ margin-bottom: 20px; padding: 18px; background: #f3f7f9; color: #667482; }}
+        .MensagemFormulario.Erro {{ margin-bottom: 16px; color: #8b241e; }}
+        .MensagemOperacao {{ margin-bottom: 18px; padding: 12px 14px; border-left: 4px solid; border-radius: 4px; }}
+        .MensagemOperacao.Sucesso {{ border-color: #14866d; color: #0c614f; background: #e7f7f2; }}
+        .MensagemOperacao.Erro {{ border-color: #c53b32; color: #8b241e; background: #fff0ef; }}
+        .SomenteLeitorTela {{ position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }}
+    </style>
+
+    <div class="CabecalhoFormulario">
+        <h1>Editar produto</h1>
+        <a class="BotaoSecundario" href="/estoque">Voltar ao estoque</a>
+    </div>
+    {MensagemHtml}
+
+    <form class="SecaoEdicaoProduto" method="post">
+        <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
+        <input type="hidden" name="acao" value="salvar_produto">
+        <h2>Dados do produto</h2>
+        <p>Os preços e saldos são mantidos separadamente em cada lote.</p>
+        {ErrosDados}
+        <div class="GradeFormulario">
+            {RenderizarCampo(FormularioDados, "Nome", "Nome do produto")}
+            {RenderizarCampo(FormularioDados, "Categoria", "Categoria")}
+            {RenderizarCampo(FormularioDados, "Marca", "Marca", "Opcional para produtos sem marca definida.")}
+            {RenderizarCampo(FormularioDados, "UnidadeVenda", "Forma de venda", "A forma de venda não pode ser alterada depois da criação dos lotes.")}
+            {'' if ProdutoEdicao.EhControladoPorDisponibilidade() else RenderizarCampo(FormularioDados, "EstoqueMinimo", "Estoque mínimo")}
+        </div>
+        <div class="AcoesFormulario">
+            <button class="BotaoPrimario" type="submit">Salvar dados</button>
+        </div>
+    </form>
+
+    <section class="SecaoEdicaoProduto" aria-labelledby="TituloLotesProduto">
+        <h2 id="TituloLotesProduto">Entradas de estoque</h2>
+        <p>Cada entrada preserva seu fornecedor, custo, preço de venda e saldo.</p>
+        {LotesHtml}
+
+        <form method="post">
+            <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
+            <input type="hidden" name="acao" value="adicionar_lote">
+            <h2>Adicionar nova entrada</h2>
+            {ErrosLote}
+            <div class="GradeFormulario">
+                {RenderizarCampo(FormularioLote, "Fornecedor", "Fornecedor")}
+                {RenderizarCampo(FormularioLote, "PrecoCusto", "Preço de custo (R$)")}
+                {RenderizarCampo(FormularioLote, "PrecoVenda", "Preço de venda (R$)")}
+                {CampoEntrada}
+            </div>
+            <div class="AcoesFormulario">
+                <button class="BotaoPrimario" type="submit">Adicionar entrada</button>
+            </div>
+        </form>
+    </section>
+    """
+
+    return HttpResponse(
+        RenderizarLayoutBase("Editar produto", ConteudoPrincipal, RotaAtiva="estoque")
+    )
+
+
+def ComponenteFormularioProduto(Request, ProdutoId=None):
     if ProdutoId is not None:
         ProdutoEdicao = get_object_or_404(Produto, pk=ProdutoId, Ativo=True)
+        return ComponenteEditarProdutoComLotes(Request, ProdutoEdicao)
+
+    ProdutoEdicao = None
 
     if Request.method == "POST":
         Formulario = FormularioProduto(Request.POST, instance=ProdutoEdicao)
 
         if Formulario.is_valid():
-            ProdutoSalvo = Formulario.save()
+            with transaction.atomic():
+                ProdutoSalvo = Formulario.save()
             Acao = "atualizado" if ProdutoEdicao else "cadastrado"
             DefinirMensagemProduto(
                 Request,
@@ -264,8 +566,29 @@ def ComponenteExcluirProduto(Request, ProdutoId):
     ProdutoExcluido.Ativo = False
     ProdutoExcluido.Disponivel = False
     ProdutoExcluido.save(update_fields=["Ativo", "Disponivel"])
+    ProdutoExcluido.LotesEstoque.update(Ativo=False, Disponivel=False)
     DefinirMensagemProduto(
         Request,
         f"{ProdutoExcluido.Nome} foi removido do estoque.",
     )
     return redirect("Estoque")
+
+
+@ExigirPost
+def ComponenteEncerrarLote(Request, ProdutoId, LoteId):
+    ProdutoEdicao = get_object_or_404(Produto, pk=ProdutoId, Ativo=True)
+    Lote = get_object_or_404(
+        LoteEstoque,
+        pk=LoteId,
+        Produto=ProdutoEdicao,
+        Ativo=True,
+    )
+    Lote.Ativo = False
+    Lote.Disponivel = False
+    Lote.save(update_fields=["Ativo", "Disponivel"])
+    ProdutoEdicao.SincronizarResumoLotes()
+    DefinirMensagemProduto(
+        Request,
+        f"Lote #{Lote.id} encerrado. O restante do estoque continua disponível.",
+    )
+    return redirect("EditarProduto", ProdutoId=ProdutoEdicao.id)

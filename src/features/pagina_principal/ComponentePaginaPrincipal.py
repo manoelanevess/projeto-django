@@ -84,6 +84,7 @@ def RenderizarItensPainel(ResumoCarrinho, TokenCsrf, CarrinhosAbertos):
 
     for Item in ResumoCarrinho["Itens"]:
         ProdutoVenda = Item["Produto"]
+        LoteVenda = Item["Lote"]
         CamposRetorno = RenderizarCamposRetorno(
             TokenCsrf,
             NumeroCarrinho,
@@ -94,12 +95,13 @@ def RenderizarItensPainel(ResumoCarrinho, TokenCsrf, CarrinhosAbertos):
             <div class="ItemPainelCarrinho">
                 <div>
                     <strong>{escape(ProdutoVenda.Nome)}</strong>
+                    <small>Lote #{LoteVenda.id} · {escape(LoteVenda.Fornecedor.Nome)}</small>
                     <small>{Item['QuantidadeFormatada']} {Item['Unidade']} × R$ {Item['PrecoFormatado']}</small>
                 </div>
                 <span>R$ {Item['SubtotalFormatado']}</span>
                 <form method="post" action="/carrinho/remover">
                     {CamposRetorno}
-                    <input type="hidden" name="produto" value="{ProdutoVenda.id}">
+                    <input type="hidden" name="item" value="{escape(Item['ChaveItem'])}">
                     <button class="BotaoRemoverPainel" type="submit" aria-label="Remover {escape(ProdutoVenda.Nome)}">×</button>
                 </form>
             </div>
@@ -706,7 +708,7 @@ def ObterScriptPaginaPrincipal(
                 const Nome = document.createElement("strong");
                 Nome.textContent = Produto.Nome;
                 const Detalhes = document.createElement("small");
-                Detalhes.textContent = `${Produto.Categoria} · ${Produto.Marca} · ${Produto.Fornecedor} · R$ ${Produto.Preco} / ${Produto.Unidade} · ${Produto.Estoque}`;
+                Detalhes.textContent = `${Produto.Categoria} · ${Produto.Marca} · Lote #${Produto.LoteId} · ${Produto.Fornecedor} · Custo R$ ${Produto.PrecoCusto} · Venda R$ ${Produto.Preco} / ${Produto.Unidade} · ${Produto.Estoque}`;
                 Dados.append(Nome, Detalhes);
 
                 const Formulario = document.createElement("form");
@@ -716,6 +718,7 @@ def ObterScriptPaginaPrincipal(
                 AdicionarCampo(Formulario, "csrfmiddlewaretoken", TokenCsrf);
                 AdicionarCampo(Formulario, "carrinho", NumeroCarrinho);
                 AdicionarCampo(Formulario, "produto", Produto.Id);
+                AdicionarCampo(Formulario, "lote", Produto.LoteId);
                 AdicionarCampo(Formulario, "retorno", "pagina-principal");
                 AdicionarCampo(Formulario, "carrinhos_abertos", ObterListaAbertos(), "CampoCarrinhosAbertos");
                 AdicionarCampo(Formulario, "busca", TermoBusca);
@@ -904,18 +907,20 @@ def ComponentePaginaPrincipal(Request):
     ProdutosParaPesquisa = [
         {
             "Id": ProdutoEstoque["Id"],
+            "LoteId": LoteEstoque["Id"],
             "Nome": ProdutoEstoque["Nome"],
             "Categoria": ProdutoEstoque["Categoria"],
             "Marca": ProdutoEstoque["Marca"],
-            "Fornecedor": ProdutoEstoque["Fornecedor"],
+            "Fornecedor": LoteEstoque["Fornecedor"],
             "Unidade": ProdutoEstoque["Unidade"],
-            "Estoque": ProdutoEstoque["EstoqueDescricao"],
+            "Estoque": LoteEstoque["EstoqueDescricao"],
             "EstoqueMaximo": (
-                format(ProdutoEstoque["Quantidade"], "f")
+                format(LoteEstoque["Quantidade"], "f")
                 if ProdutoEstoque["ControlaQuantidade"]
                 else ""
             ),
-            "Preco": ProdutoEstoque["PrecoVendaFormatado"],
+            "PrecoCusto": LoteEstoque["PrecoCustoFormatado"],
+            "Preco": LoteEstoque["PrecoVendaFormatado"],
             "Passo": "1" if ProdutoEstoque["Unidade"] in {"un", "item"} else "0.001",
             "QuantidadeInicial": "0.100" if ProdutoEstoque["Unidade"] == "kg" else "1",
             "RotuloQuantidade": (
@@ -927,7 +932,8 @@ def ComponentePaginaPrincipal(Request):
             ),
         }
         for ProdutoEstoque in ResumoProdutos["Produtos"]
-        if ProdutoEstoque["Disponivel"]
+        for LoteEstoque in ProdutoEstoque["Lotes"]
+        if LoteEstoque["Disponivel"]
     ]
     ProdutosJson = json.dumps(
         ProdutosParaPesquisa,

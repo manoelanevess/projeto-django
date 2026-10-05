@@ -10,6 +10,7 @@ class ItemVendaInline(admin.TabularInline):
     can_delete = False
     readonly_fields = (
         "Produto",
+        "Lote",
         "NomeProduto",
         "UnidadeVenda",
         "Quantidade",
@@ -55,6 +56,7 @@ class ItemVendaAdmin(admin.ModelAdmin):
     list_display = (
         "Venda",
         "NomeProduto",
+        "Lote",
         "Quantidade",
         "CustoUnitario",
         "PrecoUnitario",

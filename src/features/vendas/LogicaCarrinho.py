@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from django.db import transaction
 
 from features.produtos.LogicaProduto import FormatarQuantidade, FormatarValorMoeda
-from features.produtos.models import Produto
+from features.produtos.models import LoteEstoque, Produto
 
 from .models import ItemVenda, Venda
 
@@ -14,6 +14,7 @@ ChaveSessaoNomesCarrinhos = "NomesCarrinhosVenda"
 NumerosCarrinhos = ("1", "2", "3")
 Centavo = Decimal("0.01")
 PrecisaoQuantidade = Decimal("0.001")
+PrefixoChaveLote = "Lote:"
 
 
 def ConverterQuantidade(Valor):
@@ -28,22 +29,58 @@ def ConverterQuantidade(Valor):
     return Quantidade.quantize(PrecisaoQuantidade, rounding=ROUND_HALF_UP)
 
 
-def ValidarQuantidadeProduto(ProdutoVenda, Quantidade):
+def ValidarQuantidadeProduto(ProdutoVenda, Quantidade, LoteVenda=None):
     if ProdutoVenda.ExigeQuantidadeInteira() and Quantidade % 1 != 0:
         raise ValueError(f"{ProdutoVenda.Nome} deve ser vendido em unidades inteiras.")
 
-    if not ProdutoVenda.EstaDisponivelParaVenda():
+    if LoteVenda is not None and not LoteVenda.EstaDisponivelParaVenda():
+        raise ValueError(
+            f"O lote selecionado de {ProdutoVenda.Nome} não está disponível."
+        )
+
+    if LoteVenda is None and not ProdutoVenda.EstaDisponivelParaVenda():
         raise ValueError(f"{ProdutoVenda.Nome} não está disponível para venda.")
+
+    QuantidadeDisponivel = (
+        LoteVenda.QuantidadeDisponivel
+        if LoteVenda is not None
+        else ProdutoVenda.QuantidadeEstoque
+    )
 
     if (
         ProdutoVenda.ControlaQuantidadeEstoque()
-        and Quantidade > ProdutoVenda.QuantidadeEstoque
+        and Quantidade > QuantidadeDisponivel
     ):
         Unidade = ProdutoVenda.ObterUnidadeResumida()
-        Disponivel = FormatarQuantidade(ProdutoVenda.QuantidadeEstoque)
+        Disponivel = FormatarQuantidade(QuantidadeDisponivel)
         raise ValueError(
             f"Estoque insuficiente para {ProdutoVenda.Nome}. Disponível: {Disponivel} {Unidade}."
         )
+
+
+def ObterChaveLote(LoteId):
+    return f"{PrefixoChaveLote}{int(LoteId)}"
+
+
+def ObterIdentificadorLoteDaChave(Chave):
+    ChaveTexto = str(Chave)
+
+    if not ChaveTexto.startswith(PrefixoChaveLote):
+        return None
+
+    try:
+        return int(ChaveTexto.removeprefix(PrefixoChaveLote))
+    except (TypeError, ValueError):
+        return None
+
+
+def BuscarLotePadraoProduto(ProdutoId):
+    return (
+        LoteEstoque.objects.select_related("Produto", "Fornecedor")
+        .filter(Produto_id=ProdutoId, Produto__Ativo=True, Ativo=True)
+        .order_by("CriadoEm", "id")
+        .first()
+    )
 
 
 def ValidarNumeroCarrinho(NumeroCarrinho):
@@ -119,6 +156,36 @@ def ObterCarrinhoSessao(Request, NumeroCarrinho="1"):
     if not isinstance(Carrinho, dict):
         Carrinho = {}
 
+    CarrinhoNormalizado = {}
+    FoiConvertido = False
+
+    for ChaveItem, Quantidade in Carrinho.items():
+        if ObterIdentificadorLoteDaChave(ChaveItem) is not None:
+            CarrinhoNormalizado[ChaveItem] = Quantidade
+            continue
+
+        try:
+            ProdutoId = int(ChaveItem)
+        except (TypeError, ValueError):
+            FoiConvertido = True
+            continue
+
+        LotePadrao = BuscarLotePadraoProduto(ProdutoId)
+
+        if LotePadrao is None:
+            FoiConvertido = True
+            continue
+
+        ChaveLote = ObterChaveLote(LotePadrao.id)
+        CarrinhoNormalizado[ChaveLote] = Quantidade
+        FoiConvertido = True
+
+    if FoiConvertido:
+        Carrinhos[Numero] = CarrinhoNormalizado
+        Request.session[ChaveSessaoCarrinhos] = Carrinhos
+        Request.session.modified = True
+        Carrinho = CarrinhoNormalizado
+
     return Carrinho
 
 
@@ -135,6 +202,7 @@ def AdicionarProdutoAoCarrinho(
     NumeroCarrinho,
     ProdutoId,
     ValorQuantidade,
+    LoteId=None,
 ):
     Numero = ValidarNumeroCarrinho(NumeroCarrinho)
 
@@ -143,27 +211,45 @@ def AdicionarProdutoAoCarrinho(
     except (Produto.DoesNotExist, TypeError, ValueError):
         raise ValueError("Produto não encontrado ou indisponível.") from None
 
+    if LoteId:
+        try:
+            LoteVenda = LoteEstoque.objects.select_related(
+                "Produto", "Fornecedor"
+            ).get(
+                pk=LoteId,
+                Produto=ProdutoVenda,
+                Ativo=True,
+            )
+        except (LoteEstoque.DoesNotExist, TypeError, ValueError):
+            raise ValueError("O lote selecionado não está disponível.") from None
+    else:
+        LoteVenda = BuscarLotePadraoProduto(ProdutoVenda.id)
+
+    if LoteVenda is None:
+        raise ValueError("Este produto não possui um lote disponível para venda.")
+
     QuantidadeInformada = ConverterQuantidade(ValorQuantidade)
     Carrinho = ObterCarrinhoSessao(Request, Numero)
+    ChaveLote = ObterChaveLote(LoteVenda.id)
 
     try:
-        QuantidadeAtual = Decimal(Carrinho.get(str(ProdutoVenda.id), "0"))
+        QuantidadeAtual = Decimal(Carrinho.get(ChaveLote, "0"))
     except InvalidOperation:
         QuantidadeAtual = Decimal("0")
 
     QuantidadeTotal = QuantidadeAtual + QuantidadeInformada
-    ValidarQuantidadeProduto(ProdutoVenda, QuantidadeTotal)
+    ValidarQuantidadeProduto(ProdutoVenda, QuantidadeTotal, LoteVenda)
 
-    Carrinho[str(ProdutoVenda.id)] = format(QuantidadeTotal, "f")
+    Carrinho[ChaveLote] = format(QuantidadeTotal, "f")
     SalvarCarrinhoSessao(Request, Numero, Carrinho)
 
     return ProdutoVenda
 
 
-def RemoverProdutoDoCarrinho(Request, NumeroCarrinho, ProdutoId):
+def RemoverProdutoDoCarrinho(Request, NumeroCarrinho, ChaveItem):
     Numero = ValidarNumeroCarrinho(NumeroCarrinho)
     Carrinho = ObterCarrinhoSessao(Request, Numero)
-    Carrinho.pop(str(ProdutoId), None)
+    Carrinho.pop(str(ChaveItem), None)
     SalvarCarrinhoSessao(Request, Numero, Carrinho)
 
 
@@ -179,29 +265,29 @@ def LimparCarrinho(Request, NumeroCarrinho):
 def MontarResumoCarrinho(Request, NumeroCarrinho="1"):
     Numero = ValidarNumeroCarrinho(NumeroCarrinho)
     Carrinho = ObterCarrinhoSessao(Request, Numero)
-    Identificadores = []
-
-    for ProdutoId in Carrinho:
-        try:
-            Identificadores.append(int(ProdutoId))
-        except (TypeError, ValueError):
-            continue
-
-    Produtos = {
-        ProdutoVenda.id: ProdutoVenda
-        for ProdutoVenda in Produto.objects.filter(id__in=Identificadores)
+    IdentificadoresLotes = [
+        LoteId
+        for Chave in Carrinho
+        if (LoteId := ObterIdentificadorLoteDaChave(Chave)) is not None
+    ]
+    Lotes = {
+        Lote.id: Lote
+        for Lote in LoteEstoque.objects.select_related(
+            "Produto", "Fornecedor"
+        ).filter(id__in=IdentificadoresLotes)
     }
     Itens = []
     Total = Decimal("0.00")
 
-    for ProdutoId, ValorQuantidade in Carrinho.items():
+    for ChaveItem, ValorQuantidade in Carrinho.items():
         try:
-            ProdutoVenda = Produtos[int(ProdutoId)]
+            LoteVenda = Lotes[ObterIdentificadorLoteDaChave(ChaveItem)]
+            ProdutoVenda = LoteVenda.Produto
             Quantidade = ConverterQuantidade(ValorQuantidade)
         except (KeyError, TypeError, ValueError):
             continue
 
-        Subtotal = (Quantidade * ProdutoVenda.PrecoVenda).quantize(
+        Subtotal = (Quantidade * LoteVenda.PrecoVenda).quantize(
             Centavo,
             rounding=ROUND_HALF_UP,
         )
@@ -209,16 +295,24 @@ def MontarResumoCarrinho(Request, NumeroCarrinho="1"):
         Itens.append(
             {
                 "Produto": ProdutoVenda,
+                "Lote": LoteVenda,
+                "ChaveItem": ChaveItem,
                 "Quantidade": Quantidade,
                 "QuantidadeFormatada": FormatarQuantidade(Quantidade),
-                "PrecoFormatado": FormatarValorMoeda(ProdutoVenda.PrecoVenda),
+                "PrecoFormatado": FormatarValorMoeda(LoteVenda.PrecoVenda),
+                "CustoFormatado": FormatarValorMoeda(LoteVenda.PrecoCusto),
                 "Subtotal": Subtotal,
                 "SubtotalFormatado": FormatarValorMoeda(Subtotal),
                 "Unidade": ProdutoVenda.ObterUnidadeResumida(),
             }
         )
 
-    Itens.sort(key=lambda Item: Item["Produto"].Nome.lower())
+    Itens.sort(
+        key=lambda Item: (
+            Item["Produto"].Nome.lower(),
+            Item["Lote"].PrecoVenda,
+        )
+    )
     Total = Total.quantize(Centavo, rounding=ROUND_HALF_UP)
 
     return {
@@ -267,36 +361,44 @@ def ConcluirVenda(
     if FormaPagamento not in {Venda.DINHEIRO, Venda.PIX}:
         raise ValueError("Selecione dinheiro ou PIX como forma de pagamento.")
 
-    try:
-        Identificadores = [int(ProdutoId) for ProdutoId in Carrinho]
-    except (TypeError, ValueError):
+    Identificadores = [
+        ObterIdentificadorLoteDaChave(ChaveItem) for ChaveItem in Carrinho
+    ]
+
+    if any(LoteId is None for LoteId in Identificadores):
         raise ValueError("O carrinho contém um produto inválido.") from None
 
     with transaction.atomic():
-        ProdutosBloqueados = {
-            ProdutoVenda.id: ProdutoVenda
-            for ProdutoVenda in Produto.objects.select_for_update().filter(
+        LotesBloqueados = {
+            LoteVenda.id: LoteVenda
+            for LoteVenda in LoteEstoque.objects.select_for_update()
+            .select_related("Produto", "Fornecedor")
+            .filter(
                 id__in=Identificadores,
                 Ativo=True,
+                Produto__Ativo=True,
             )
         }
 
-        if len(ProdutosBloqueados) != len(Identificadores):
-            raise ValueError("Um produto do carrinho não está mais disponível.")
+        if len(LotesBloqueados) != len(set(Identificadores)):
+            raise ValueError("Um lote do carrinho não está mais disponível.")
 
         ItensVenda = []
         Total = Decimal("0.00")
         LucroTotal = Decimal("0.00")
 
-        for ProdutoId, ValorQuantidade in Carrinho.items():
-            ProdutoVenda = ProdutosBloqueados[int(ProdutoId)]
+        for ChaveItem, ValorQuantidade in Carrinho.items():
+            LoteVenda = LotesBloqueados[
+                ObterIdentificadorLoteDaChave(ChaveItem)
+            ]
+            ProdutoVenda = LoteVenda.Produto
             Quantidade = ConverterQuantidade(ValorQuantidade)
-            ValidarQuantidadeProduto(ProdutoVenda, Quantidade)
-            Subtotal = (Quantidade * ProdutoVenda.PrecoVenda).quantize(
+            ValidarQuantidadeProduto(ProdutoVenda, Quantidade, LoteVenda)
+            Subtotal = (Quantidade * LoteVenda.PrecoVenda).quantize(
                 Centavo,
                 rounding=ROUND_HALF_UP,
             )
-            CustoItem = (Quantidade * ProdutoVenda.PrecoCusto).quantize(
+            CustoItem = (Quantidade * LoteVenda.PrecoCusto).quantize(
                 Centavo,
                 rounding=ROUND_HALF_UP,
             )
@@ -304,7 +406,7 @@ def ConcluirVenda(
             Total += Subtotal
             LucroTotal += LucroItem
             ItensVenda.append(
-                (ProdutoVenda, Quantidade, Subtotal, LucroItem)
+                (LoteVenda, Quantidade, Subtotal, LucroItem)
             )
 
         Total = Total.quantize(Centavo, rounding=ROUND_HALF_UP)
@@ -331,21 +433,38 @@ def ConcluirVenda(
             Troco=Troco,
         )
 
-        for ProdutoVenda, Quantidade, Subtotal, LucroItem in ItensVenda:
+        ProdutosAtualizados = {}
+
+        for LoteVenda, Quantidade, Subtotal, LucroItem in ItensVenda:
+            ProdutoVenda = LoteVenda.Produto
             ItemVenda.objects.create(
                 Venda=VendaConcluida,
                 Produto=ProdutoVenda,
+                Lote=LoteVenda,
                 NomeProduto=ProdutoVenda.Nome,
                 UnidadeVenda=ProdutoVenda.UnidadeVenda,
                 Quantidade=Quantidade,
-                CustoUnitario=ProdutoVenda.PrecoCusto,
-                PrecoUnitario=ProdutoVenda.PrecoVenda,
+                CustoUnitario=LoteVenda.PrecoCusto,
+                PrecoUnitario=LoteVenda.PrecoVenda,
                 Subtotal=Subtotal,
                 Lucro=LucroItem,
             )
             if ProdutoVenda.ControlaQuantidadeEstoque():
-                ProdutoVenda.QuantidadeEstoque -= Quantidade
-                ProdutoVenda.save(update_fields=["QuantidadeEstoque"])
+                LoteVenda.QuantidadeDisponivel -= Quantidade
+
+                if LoteVenda.QuantidadeDisponivel <= 0:
+                    LoteVenda.QuantidadeDisponivel = Decimal("0.000")
+                    LoteVenda.Ativo = False
+                    LoteVenda.Disponivel = False
+
+                LoteVenda.save(
+                    update_fields=["QuantidadeDisponivel", "Ativo", "Disponivel"]
+                )
+
+            ProdutosAtualizados[ProdutoVenda.id] = ProdutoVenda
+
+        for ProdutoVenda in ProdutosAtualizados.values():
+            ProdutoVenda.SincronizarResumoLotes()
 
     LimparCarrinho(Request, Numero)
     return VendaConcluida

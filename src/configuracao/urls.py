@@ -13,6 +13,7 @@ from features.fornecedor.ComponenteFornecedor import (
 )
 from features.pagina_principal.ComponentePaginaPrincipal import ComponentePaginaPrincipal
 from features.produtos.ComponenteProduto import (
+    ComponenteEncerrarLote,
     ComponenteExcluirProduto,
     ComponenteFormularioProduto,
     ComponenteRedirecionarProdutos,
@@ -92,6 +93,11 @@ urlpatterns = [
         "estoque/<int:ProdutoId>/excluir",
         ProtegerComponente(ComponenteExcluirProduto),
         name="ExcluirProduto",
+    ),
+    path(
+        "estoque/<int:ProdutoId>/lotes/<int:LoteId>/encerrar",
+        ProtegerComponente(ComponenteEncerrarLote),
+        name="EncerrarLoteEstoque",
     ),
     path(
         "fornecedores",
