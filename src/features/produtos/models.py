@@ -4,6 +4,8 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 
 
 class Produto(models.Model):
@@ -69,6 +71,14 @@ class Produto(models.Model):
 
     def __str__(self):
         return self.Nome
+
+    def save(self, *args, **kwargs):
+        NomeLimpo = " ".join(str(self.Nome).split())
+
+        if NomeLimpo:
+            self.Nome = NomeLimpo[0].upper() + NomeLimpo[1:]
+
+        super().save(*args, **kwargs)
 
     def clean(self):
         super().clean()
@@ -159,3 +169,153 @@ class Produto(models.Model):
             return "Comprimento (m)"
 
         return "Quantidade"
+
+    def SincronizarResumoLotes(self):
+        LotesAtivos = list(
+            self.LotesEstoque.filter(Ativo=True).order_by("CriadoEm", "id")
+        )
+        LoteReferencia = next(
+            (
+                Lote
+                for Lote in reversed(LotesAtivos)
+                if Lote.EstaDisponivelParaVenda()
+            ),
+            LotesAtivos[-1] if LotesAtivos else None,
+        )
+
+        if self.EhControladoPorDisponibilidade():
+            self.QuantidadeEstoque = None
+            self.EstoqueMinimo = None
+            self.Disponivel = any(
+                Lote.EstaDisponivelParaVenda() for Lote in LotesAtivos
+            )
+        else:
+            self.QuantidadeEstoque = sum(
+                (
+                    Lote.QuantidadeDisponivel or Decimal("0.000")
+                    for Lote in LotesAtivos
+                ),
+                Decimal("0.000"),
+            )
+            self.Disponivel = self.QuantidadeEstoque > 0
+
+        CamposAtualizados = ["QuantidadeEstoque", "EstoqueMinimo", "Disponivel"]
+
+        if LoteReferencia is not None:
+            self.Fornecedor = LoteReferencia.Fornecedor
+            self.PrecoCusto = LoteReferencia.PrecoCusto
+            self.PrecoVenda = LoteReferencia.PrecoVenda
+            CamposAtualizados.extend(["Fornecedor", "PrecoCusto", "PrecoVenda"])
+
+        self.save(update_fields=CamposAtualizados)
+
+
+class LoteEstoque(models.Model):
+    Produto = models.ForeignKey(
+        Produto,
+        on_delete=models.PROTECT,
+        related_name="LotesEstoque",
+    )
+    Fornecedor = models.ForeignKey(
+        "fornecedor.Fornecedor",
+        on_delete=models.PROTECT,
+        related_name="LotesEstoque",
+    )
+    Numero = models.PositiveIntegerField(editable=False)
+    QuantidadeInicial = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.000"))],
+    )
+    QuantidadeDisponivel = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.000"))],
+    )
+    PrecoCusto = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.00"))],
+    )
+    PrecoVenda = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    Disponivel = models.BooleanField(default=True)
+    Ativo = models.BooleanField(default=True)
+    CriadoEm = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["CriadoEm", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["Produto", "Numero"],
+                name="LoteNumeroUnicoPorProduto",
+            )
+        ]
+        verbose_name = "lote de estoque"
+        verbose_name_plural = "lotes de estoque"
+
+    def __str__(self):
+        return f"{self.Produto.Nome} - lote #{self.Numero}"
+
+    def save(self, *args, **kwargs):
+        if self.Numero is None:
+            UltimoNumero = (
+                type(self).objects.filter(Produto_id=self.Produto_id).aggregate(
+                    MaiorNumero=models.Max("Numero")
+                )["MaiorNumero"]
+                or 0
+            )
+            self.Numero = UltimoNumero + 1
+
+        super().save(*args, **kwargs)
+
+    def ObterNumeroNoProduto(self):
+        return self.Numero
+
+    def ControlaQuantidadeEstoque(self):
+        return self.Produto.ControlaQuantidadeEstoque()
+
+    def EstaDisponivelParaVenda(self):
+        if not self.Ativo or not self.Produto.Ativo:
+            return False
+
+        if self.Produto.EhControladoPorDisponibilidade():
+            return self.Disponivel
+
+        return (
+            self.QuantidadeDisponivel is not None
+            and self.QuantidadeDisponivel > 0
+        )
+
+    def ObterDescricaoEstoque(self):
+        if self.Produto.EhControladoPorDisponibilidade():
+            return "Disponível" if self.Disponivel else "Indisponível"
+
+        return (
+            f"{self.QuantidadeDisponivel} "
+            f"{self.Produto.ObterUnidadeResumida()}"
+        )
+
+
+@receiver(post_save, sender=Produto)
+def CriarLoteInicialProduto(instance, created, **kwargs):
+    if not created or kwargs.get("raw"):
+        return
+
+    LoteEstoque.objects.create(
+        Produto=instance,
+        Fornecedor=instance.Fornecedor,
+        QuantidadeInicial=instance.QuantidadeEstoque,
+        QuantidadeDisponivel=instance.QuantidadeEstoque,
+        PrecoCusto=instance.PrecoCusto,
+        PrecoVenda=instance.PrecoVenda,
+        Disponivel=instance.Disponivel,
+        Ativo=instance.Ativo,
+    )

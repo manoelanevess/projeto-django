@@ -65,7 +65,15 @@ def ComponenteFornecedores(Request):
 
         for FornecedorEstoque in Fornecedores:
             Contato = FornecedorEstoque.Email or FornecedorEstoque.Telefone or "Não informado"
-            QuantidadeProdutos = FornecedorEstoque.Produtos.filter(Ativo=True).count()
+            QuantidadeProdutos = (
+                FornecedorEstoque.LotesEstoque.filter(
+                    Produto__Ativo=True,
+                    Ativo=True,
+                )
+                .values("Produto_id")
+                .distinct()
+                .count()
+            )
             LinhasFornecedores.append(
                 f"""
                 <tr>

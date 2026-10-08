@@ -7,7 +7,12 @@ from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 
-from .models import ResumoVendaMensal, Venda
+from .models import (
+    ItemRegistroVendaAntiga,
+    RegistroVendaAntiga,
+    ResumoVendaMensal,
+    Venda,
+)
 
 
 HoraInicioDiaComercial = 7
@@ -53,18 +58,15 @@ def ConsolidarVendasDeMesesAnteriores(DataReferencia=None):
     Hoje = DataReferencia or timezone.localdate()
     InicioMesAtual = date(Hoje.year, Hoje.month, 1)
     VendasAntigas = list(
-        Venda.objects.filter(CriadaEm__date__lt=InicioMesAtual).values(
-            "id",
-            "Proprietario_id",
-            "Total",
-            "Lucro",
-            "CriadaEm",
-        )
+        Venda.objects.filter(CriadaEm__date__lt=InicioMesAtual)
+        .select_related("Proprietario")
+        .prefetch_related("Itens")
     )
 
     if not VendasAntigas:
         return 0
 
+    IdentificadoresVendas = [VendaAntiga.id for VendaAntiga in VendasAntigas]
     TotaisPorMes = defaultdict(
         lambda: {
             "QuantidadeVendas": 0,
@@ -75,18 +77,56 @@ def ConsolidarVendasDeMesesAnteriores(DataReferencia=None):
     )
 
     for VendaAntiga in VendasAntigas:
-        DataVenda = timezone.localtime(VendaAntiga["CriadaEm"])
+        DataVenda = timezone.localtime(VendaAntiga.CriadaEm)
         Chave = (
-            VendaAntiga["Proprietario_id"],
+            VendaAntiga.Proprietario_id,
             DataVenda.year,
             DataVenda.month,
         )
         TotaisPorMes[Chave]["QuantidadeVendas"] += 1
-        TotaisPorMes[Chave]["TotalVendido"] += VendaAntiga["Total"]
-        TotaisPorMes[Chave]["Lucro"] += VendaAntiga["Lucro"]
-        TotaisPorMes[Chave]["Vendas"].append(VendaAntiga["id"])
+        TotaisPorMes[Chave]["TotalVendido"] += VendaAntiga.Total
+        TotaisPorMes[Chave]["Lucro"] += VendaAntiga.Lucro
+        TotaisPorMes[Chave]["Vendas"].append(VendaAntiga.id)
 
     with transaction.atomic():
+        RegistrosExistentes = set(
+            RegistroVendaAntiga.objects.select_for_update()
+            .filter(VendaOriginalId__in=IdentificadoresVendas)
+            .values_list("VendaOriginalId", flat=True)
+        )
+        NovosItensAntigos = []
+
+        for VendaAntiga in VendasAntigas:
+            if VendaAntiga.id in RegistrosExistentes:
+                continue
+
+            RegistroAntigo = RegistroVendaAntiga.objects.create(
+                Proprietario=VendaAntiga.Proprietario,
+                VendaOriginalId=VendaAntiga.id,
+                NomeCliente=VendaAntiga.NomeCliente,
+                FormaPagamento=VendaAntiga.FormaPagamento,
+                Total=VendaAntiga.Total,
+                Lucro=VendaAntiga.Lucro,
+                ValorRecebido=VendaAntiga.ValorRecebido,
+                Troco=VendaAntiga.Troco,
+                CriadaEm=VendaAntiga.CriadaEm,
+            )
+
+            for ItemAntigo in VendaAntiga.Itens.all():
+                NovosItensAntigos.append(
+                    ItemRegistroVendaAntiga(
+                        Registro=RegistroAntigo,
+                        NomeProduto=ItemAntigo.NomeProduto,
+                        UnidadeVenda=ItemAntigo.UnidadeVenda,
+                        Quantidade=ItemAntigo.Quantidade,
+                        PrecoUnitario=ItemAntigo.PrecoUnitario,
+                        Subtotal=ItemAntigo.Subtotal,
+                    )
+                )
+
+        if NovosItensAntigos:
+            ItemRegistroVendaAntiga.objects.bulk_create(NovosItensAntigos)
+
         for (ProprietarioId, Ano, Mes), Totais in TotaisPorMes.items():
             Resumo, _ = ResumoVendaMensal.objects.select_for_update().get_or_create(
                 Proprietario_id=ProprietarioId,

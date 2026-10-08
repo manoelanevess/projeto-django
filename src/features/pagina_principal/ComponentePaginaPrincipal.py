@@ -7,27 +7,13 @@ from django.middleware.csrf import get_token as ObterTokenCsrf
 
 from componentes.LayoutBase import RenderizarLayoutBase
 from features.vendas.ComponenteCarrinho import ConsumirMensagem
+from features.vendas.LogicaCarrinho import NumerosCarrinhos
 
 from .LogicaPaginaPrincipal import GerarDadosPaginaPrincipal
 
 
 def ObterCarrinhosAbertos(Request):
-    CarrinhosAbertos = []
-
-    for Numero in Request.GET.get("carrinhos_abertos", "").split(","):
-        if Numero in {"1", "2", "3"} and Numero not in CarrinhosAbertos:
-            CarrinhosAbertos.append(Numero)
-
-    CarrinhoPesquisado = Request.GET.get("carrinho", "")
-
-    if (
-        Request.GET.get("busca_carrinho")
-        and CarrinhoPesquisado in {"1", "2", "3"}
-        and CarrinhoPesquisado not in CarrinhosAbertos
-    ):
-        CarrinhosAbertos.append(CarrinhoPesquisado)
-
-    return CarrinhosAbertos
+    return list(NumerosCarrinhos)
 
 
 def RenderizarCartoesCarrinhos(ResumosCarrinhos, CarrinhosAbertos):
@@ -84,6 +70,7 @@ def RenderizarItensPainel(ResumoCarrinho, TokenCsrf, CarrinhosAbertos):
 
     for Item in ResumoCarrinho["Itens"]:
         ProdutoVenda = Item["Produto"]
+        LoteVenda = Item["Lote"]
         CamposRetorno = RenderizarCamposRetorno(
             TokenCsrf,
             NumeroCarrinho,
@@ -93,13 +80,17 @@ def RenderizarItensPainel(ResumoCarrinho, TokenCsrf, CarrinhosAbertos):
             f"""
             <div class="ItemPainelCarrinho">
                 <div>
-                    <strong>{escape(ProdutoVenda.Nome)}</strong>
+                    <div class="LinhaNomeProduto">
+                        <strong>{escape(ProdutoVenda.Nome)}</strong>
+                        <span class="MarcaProduto">{escape(ProdutoVenda.Marca or 'Sem marca')}</span>
+                    </div>
+                    <small>Lote #{Item['NumeroLote']} · {escape(LoteVenda.Fornecedor.Nome)}</small>
                     <small>{Item['QuantidadeFormatada']} {Item['Unidade']} × R$ {Item['PrecoFormatado']}</small>
                 </div>
                 <span>R$ {Item['SubtotalFormatado']}</span>
                 <form method="post" action="/carrinho/remover">
                     {CamposRetorno}
-                    <input type="hidden" name="produto" value="{ProdutoVenda.id}">
+                    <input type="hidden" name="item" value="{escape(Item['ChaveItem'])}">
                     <button class="BotaoRemoverPainel" type="submit" aria-label="Remover {escape(ProdutoVenda.Nome)}">×</button>
                 </form>
             </div>
@@ -138,6 +129,10 @@ def RenderizarPagamentoPainel(ResumoCarrinho, TokenCsrf, CarrinhosAbertos):
                 <label>
                     <input type="radio" name="forma_pagamento" value="pix">
                     PIX
+                </label>
+                <label>
+                    <input type="radio" name="forma_pagamento" value="conta_cliente">
+                    Conta do cliente
                 </label>
             </fieldset>
 
@@ -191,14 +186,12 @@ def RenderizarPaineisCarrinhos(
             TokenCsrf,
             NumerosAbertos,
         )
-        AtributoOculto = "" if Numero in CarrinhosAbertos else "hidden"
         Paineis.append(
             f"""
             <aside
                 class="PainelCarrinhoFlutuante"
                 id="PainelCarrinho-{Numero}"
                 data-painel-carrinho="{Numero}"
-                {AtributoOculto}
             >
                 <header class="CabecalhoPainelCarrinho">
                     <div>
@@ -216,12 +209,6 @@ def RenderizarPaineisCarrinhos(
                             >&#9998;</button>
                         </div>
                     </div>
-                    <button
-                        class="BotaoFecharPainel"
-                        type="button"
-                        data-fechar-carrinho="{Numero}"
-                        aria-label="Fechar carrinho {Numero}"
-                    >×</button>
                 </header>
 
                 <section class="AdicionarProdutoPainel">
@@ -300,13 +287,6 @@ def RenderizarConsultaEstoque(ConsultaEstoque):
 def ObterEstilosPaginaPrincipal():
     return """
     <style>
-        .CabecalhoPrincipal {
-            margin-bottom: 20px;
-        }
-
-        .CabecalhoPrincipal h1 { margin: 0 0 5px; }
-        .CabecalhoPrincipal p { margin: 0; color: #667482; }
-
         .TituloSecao {
             margin: 24px 0 12px;
             display: flex;
@@ -315,6 +295,7 @@ def ObterEstilosPaginaPrincipal():
             gap: 12px;
         }
 
+        .TituloAtendimentos { margin-top: 0; }
         .TituloSecao h2 { margin: 0; }
         .TituloSecao span { color: #667482; font-size: 13px; }
 
@@ -399,14 +380,14 @@ def ObterEstilosPaginaPrincipal():
             width: 100%;
             margin-top: 14px;
             padding: 2px 2px 14px;
-            display: flex;
-            align-items: flex-start;
-            gap: 10px;
-            overflow-x: auto;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            align-items: start;
+            gap: 14px;
         }
 
         .PainelCarrinhoFlutuante {
-            flex: 0 0 318px;
+            min-width: 0;
             max-height: 620px;
             overflow-y: auto;
             border: 1px solid #b8c8d2;
@@ -456,22 +437,9 @@ def ObterEstilosPaginaPrincipal():
         }
 
         .BotaoEditarNomePainel:hover,
-        .BotaoEditarNomePainel:focus-visible,
-        .BotaoFecharPainel:hover,
-        .BotaoFecharPainel:focus-visible {
+        .BotaoEditarNomePainel:focus-visible {
             background: rgba(255, 255, 255, 0.28);
             outline: 2px solid rgba(255, 255, 255, 0.55);
-        }
-
-        .BotaoFecharPainel {
-            width: 34px;
-            height: 34px;
-            border: 0;
-            border-radius: 4px;
-            color: #ffffff;
-            background: rgba(255, 255, 255, 0.16);
-            font-size: 23px;
-            cursor: pointer;
         }
 
         .AdicionarProdutoPainel { padding: 15px; border-bottom: 1px solid #e0e7eb; }
@@ -497,6 +465,8 @@ def ObterEstilosPaginaPrincipal():
         .ResultadoProdutoPainel strong,
         .ResultadoProdutoPainel small { display: block; }
         .ResultadoProdutoPainel small { margin-top: 3px; color: #667482; }
+        .LinhaNomeProduto { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+        .MarcaProduto { color: #202b36; font-size: 12px; font-weight: 600; }
         .FormularioResultadoPainel { display: grid; grid-template-columns: 82px 1fr; gap: 7px; }
         .FormularioResultadoPainel input[type="number"] {
             min-width: 0;
@@ -569,6 +539,7 @@ def ObterEstilosPaginaPrincipal():
             margin: 0 0 12px;
             padding: 0;
             display: flex;
+            flex-wrap: wrap;
             gap: 12px;
             border: 0;
         }
@@ -635,10 +606,10 @@ def ObterEstilosPaginaPrincipal():
 
         @media (max-width: 760px) {
             .GradeAtendimentos { grid-template-columns: 1fr; }
+            .AreaPaineisCarrinhos { grid-template-columns: 1fr; }
             .TituloSecao { align-items: flex-start; flex-direction: column; gap: 4px; }
             .ConsultaEstoqueCabecalho { align-items: stretch; flex-direction: column; }
             .PainelCarrinhoFlutuante {
-                flex-basis: min(330px, calc(100vw - 28px));
                 max-height: 560px;
             }
         }
@@ -677,14 +648,13 @@ def ObterScriptPaginaPrincipal(
 
             const AtualizarPaineis = () => {
                 document.querySelectorAll("[data-painel-carrinho]").forEach((Painel) => {
-                    Painel.hidden = !Abertos.has(Painel.dataset.painelCarrinho);
+                    Painel.hidden = false;
                 });
                 document.querySelectorAll("[data-abrir-carrinho]").forEach((Botao) => {
-                    const Aberto = Abertos.has(Botao.dataset.abrirCarrinho);
-                    Botao.classList.toggle("Aberto", Aberto);
-                    Botao.setAttribute("aria-expanded", String(Aberto));
+                    Botao.classList.add("Aberto");
+                    Botao.setAttribute("aria-expanded", "true");
                 });
-                AreaPaineis.hidden = Abertos.size === 0;
+                AreaPaineis.hidden = false;
                 AtualizarCamposAbertos();
             };
 
@@ -703,11 +673,17 @@ def ObterScriptPaginaPrincipal(
                 Resultado.className = "ResultadoProdutoPainel";
 
                 const Dados = document.createElement("div");
+                const LinhaNome = document.createElement("div");
+                LinhaNome.className = "LinhaNomeProduto";
                 const Nome = document.createElement("strong");
                 Nome.textContent = Produto.Nome;
+                const Marca = document.createElement("span");
+                Marca.className = "MarcaProduto";
+                Marca.textContent = Produto.Marca;
+                LinhaNome.append(Nome, Marca);
                 const Detalhes = document.createElement("small");
-                Detalhes.textContent = `${Produto.Categoria} · ${Produto.Marca} · ${Produto.Fornecedor} · R$ ${Produto.Preco} / ${Produto.Unidade} · ${Produto.Estoque}`;
-                Dados.append(Nome, Detalhes);
+                Detalhes.textContent = `${Produto.Categoria} · ${Produto.Fornecedor} · Venda R$ ${Produto.Preco} / ${Produto.Unidade} · ${Produto.Estoque}`;
+                Dados.append(LinhaNome, Detalhes);
 
                 const Formulario = document.createElement("form");
                 Formulario.className = "FormularioResultadoPainel";
@@ -766,19 +742,8 @@ def ObterScriptPaginaPrincipal(
             document.querySelectorAll("[data-abrir-carrinho]").forEach((Botao) => {
                 Botao.addEventListener("click", () => {
                     const Numero = Botao.dataset.abrirCarrinho;
-                    if (Abertos.has(Numero)) Abertos.delete(Numero);
-                    else Abertos.add(Numero);
-                    AtualizarPaineis();
-                    if (Abertos.has(Numero)) {
-                        document.querySelector(`[data-busca-produto="${Numero}"]`).focus();
-                    }
-                });
-            });
-
-            document.querySelectorAll("[data-fechar-carrinho]").forEach((Botao) => {
-                Botao.addEventListener("click", () => {
-                    Abertos.delete(Botao.dataset.fecharCarrinho);
-                    AtualizarPaineis();
+                    Abertos.add(Numero);
+                    document.querySelector(`[data-busca-produto="${Numero}"]`).focus();
                 });
             });
 
@@ -907,7 +872,9 @@ def ComponentePaginaPrincipal(Request):
             "Nome": ProdutoEstoque["Nome"],
             "Categoria": ProdutoEstoque["Categoria"],
             "Marca": ProdutoEstoque["Marca"],
-            "Fornecedor": ProdutoEstoque["Fornecedor"],
+            "Fornecedor": ", ".join(dict.fromkeys(
+                Lote["Fornecedor"] for Lote in ProdutoEstoque["Lotes"] if Lote["Disponivel"]
+            )),
             "Unidade": ProdutoEstoque["Unidade"],
             "Estoque": ProdutoEstoque["EstoqueDescricao"],
             "EstoqueMaximo": (
@@ -927,7 +894,7 @@ def ComponentePaginaPrincipal(Request):
             ),
         }
         for ProdutoEstoque in ResumoProdutos["Produtos"]
-        if ProdutoEstoque["Disponivel"]
+        if ProdutoEstoque["QuantidadeLotesDisponiveis"] > 0
     ]
     ProdutosJson = json.dumps(
         ProdutosParaPesquisa,
@@ -940,21 +907,14 @@ def ComponentePaginaPrincipal(Request):
         CarrinhoPesquisado,
         BuscaCarrinho,
     )
-    AtributoAreaOculta = "" if CarrinhosAbertos else "hidden"
-
     ConteudoPrincipal = f"""
     {ObterEstilosPaginaPrincipal()}
 
-    <header class="CabecalhoPrincipal">
-        <h1>Página Principal</h1>
-        <p>Atendimento e consulta rápida de estoque.</p>
-    </header>
-
     {HtmlMensagem}
 
-    <div class="TituloSecao">
+    <div class="TituloSecao TituloAtendimentos">
         <h2>Atendimentos em andamento</h2>
-        <span>Clique para abrir até três carrinhos</span>
+        <span>Carrinhos sempre abertos</span>
     </div>
     <section class="GradeAtendimentos" aria-label="Carrinhos em atendimento">
         {CartoesCarrinhos}
@@ -964,7 +924,6 @@ def ComponentePaginaPrincipal(Request):
         class="AreaPaineisCarrinhos"
         id="AreaPaineisCarrinhos"
         aria-label="Carrinhos abertos"
-        {AtributoAreaOculta}
     >
         {PaineisCarrinhos}
     </div>

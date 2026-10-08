@@ -13,6 +13,9 @@ from features.fornecedor.ComponenteFornecedor import (
 )
 from features.pagina_principal.ComponentePaginaPrincipal import ComponentePaginaPrincipal
 from features.produtos.ComponenteProduto import (
+    ComponenteAtualizarDataLote,
+    ComponenteEncerrarLote,
+    ComponenteExcluirLote,
     ComponenteExcluirProduto,
     ComponenteFormularioProduto,
     ComponenteRedirecionarProdutos,
@@ -27,6 +30,11 @@ from features.vendas.ComponenteCarrinho import (
     ComponenteRemoverItem,
     ComponenteRenomearCarrinho,
 )
+from features.vendas.ComponenteContaCliente import (
+    ComponenteContinhasClientes,
+    ComponenteRegistrarPagamentoContaCliente,
+)
+from features.vendas.ComponenteHistoricoVenda import ComponenteHistoricoVendas
 
 
 ProtegerComponente = ExigirLogin(login_url="Login")
@@ -68,6 +76,21 @@ urlpatterns = [
         name="RenomearCarrinho",
     ),
     path(
+        "vendas/historico",
+        ProtegerComponente(ComponenteHistoricoVendas),
+        name="HistoricoVendas",
+    ),
+    path(
+        "continhas",
+        ProtegerComponente(ComponenteContinhasClientes),
+        name="ContinhasClientes",
+    ),
+    path(
+        "continhas/pagamento",
+        ProtegerComponente(ComponenteRegistrarPagamentoContaCliente),
+        name="RegistrarPagamentoContaCliente",
+    ),
+    path(
         "produtos",
         ProtegerComponente(ComponenteRedirecionarProdutos),
         name="ListaProdutos",
@@ -92,6 +115,21 @@ urlpatterns = [
         "estoque/<int:ProdutoId>/excluir",
         ProtegerComponente(ComponenteExcluirProduto),
         name="ExcluirProduto",
+    ),
+    path(
+        "estoque/<int:ProdutoId>/lotes/<int:LoteId>/data",
+        ProtegerComponente(ComponenteAtualizarDataLote),
+        name="AtualizarDataLoteEstoque",
+    ),
+    path(
+        "estoque/<int:ProdutoId>/lotes/<int:LoteId>/excluir",
+        ProtegerComponente(ComponenteExcluirLote),
+        name="ExcluirLoteEstoque",
+    ),
+    path(
+        "estoque/<int:ProdutoId>/lotes/<int:LoteId>/encerrar",
+        ProtegerComponente(ComponenteEncerrarLote),
+        name="EncerrarLoteEstoque",
     ),
     path(
         "fornecedores",

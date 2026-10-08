@@ -366,3 +366,15 @@ Decisão: publicar frontend e backend juntos em um único projeto Django na Verc
 Consequências: um único deploy mantém navegação e backend na mesma origem; o banco de produção começa com o cadastro necessário para operar, mas com Dashboard e histórico de vendas zerados; segredos e dados de conexão ficam somente nas variáveis de ambiente da Vercel; a configuração aceita `POSTGRES_DATABASE` da integração Neon sem alterar o `POSTGRES_DB` usado localmente; o ponto de entrada WSGI informa o caminho completo em `src` exigido pela detecção da Vercel.
 
 Alternativa descartada: separar as páginas Django em outro projeto de frontend ou copiar o histórico de testes para produção, pois isso adicionaria complexidade sem benefício para a arquitetura atual.
+
+## Decisão 22 — Entradas de estoque organizadas por lote
+
+Data: 05/10/2026
+
+Contexto: novas unidades de um produto podem chegar com custo, preço de venda e fornecedor diferentes enquanto ainda existe saldo da entrada anterior. Substituir os preços no cadastro perderia a composição real do estoque e distorceria o lucro das vendas.
+
+Decisão: manter o produto como identidade de nome, marca, categoria e forma de venda, e registrar cada entrada em `LoteEstoque`. Cada lote preserva fornecedor, quantidade recebida, saldo disponível, preço de custo, preço de venda, disponibilidade e data de entrada. O carrinho exige a escolha do lote e a conclusão da venda reduz somente o saldo escolhido dentro da transação.
+
+Consequências: um produto pode aparecer no carrinho com mais de uma opção de preço; o item vendido guarda o lote e copia seus preços para preservar o histórico; o valor do estoque considera o custo de cada lote; produtos por peso mantêm encerramento manual por não possuírem quantidade exata; os campos de preço e quantidade de `Produto` permanecem como resumo para compatibilidade das telas e filtros existentes.
+
+Alternativa descartada: duplicar o produto ou sobrescrever custo, venda e quantidade a cada nova compra, pois ambas as opções perderiam a origem do saldo e tornariam incorretos o lucro e a baixa de estoque.

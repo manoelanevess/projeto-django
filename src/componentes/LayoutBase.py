@@ -12,6 +12,13 @@ MenusNavegacao = [
         "Rota": "/fornecedores",
         "Sigla": "FO",
     },
+    {"Chave": "continhas", "Nome": "Continhas", "Rota": "/continhas", "Sigla": "CT"},
+    {
+        "Chave": "historico-vendas",
+        "Nome": "Vendas",
+        "Rota": "/vendas/historico",
+        "Sigla": "VE",
+    },
 ]
 
 
@@ -141,21 +148,9 @@ def RenderizarLayoutBase(TituloPagina, ConteudoPrincipal, RotaAtiva="pagina-prin
             .MarcaTopo {{
                 display: flex;
                 align-items: center;
-                gap: 10px;
                 font-size: 17px;
                 font-weight: 700;
                 color: #2b3843;
-            }}
-
-            .MarcaTopo span {{
-                width: 34px;
-                height: 24px;
-                border-radius: 999px;
-                display: grid;
-                place-items: center;
-                color: #ffffff;
-                background: #0784ca;
-                font-size: 12px;
             }}
 
             .AcoesTopo {{
@@ -423,13 +418,13 @@ def RenderizarLayoutBase(TituloPagina, ConteudoPrincipal, RotaAtiva="pagina-prin
     <body>
         <div class="TelaAplicacao">
             <aside class="BarraLateral" aria-label="Menu principal">
-                <div class="MarcaLateral">EN</div>
+                <div class="MarcaLateral">CE</div>
                 {ItensMenu}
             </aside>
 
             <div class="AreaPrincipal">
                 <header class="Topo">
-                    <div class="MarcaTopo"><span>EN</span> Estoque Nuvem</div>
+                    <div class="MarcaTopo">Controle de estoque</div>
                     <nav class="AcoesTopo" aria-label="Ações rápidas">
                         <a href="/">Início</a>
                         <span>Proprietário</span>

@@ -62,6 +62,13 @@ def RenderizarProdutos(Produtos, TokenCsrf):
             ClasseSituacao = "Disponivel"
             Situacao = "Disponível"
         EstoqueMinimo = ""
+        InformacaoLotes = ""
+
+        if ProdutoEstoque["QuantidadeLotes"] > 1:
+            InformacaoLotes = (
+                f'<small>{ProdutoEstoque["QuantidadeLotesDisponiveis"]} '
+                f'de {ProdutoEstoque["QuantidadeLotes"]} lotes disponíveis</small>'
+            )
 
         if ProdutoEstoque["ControlaQuantidade"]:
             EstoqueMinimo = (
@@ -74,6 +81,7 @@ def RenderizarProdutos(Produtos, TokenCsrf):
             <tr>
                 <td class="DadosProduto">
                     <strong>{escape(ProdutoEstoque["Nome"])}</strong>
+                    {InformacaoLotes}
                 </td>
                 <td>{escape(ProdutoEstoque["Marca"])}</td>
                 <td>{escape(ProdutoEstoque["Categoria"])}</td>
