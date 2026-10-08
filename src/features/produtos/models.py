@@ -72,6 +72,14 @@ class Produto(models.Model):
     def __str__(self):
         return self.Nome
 
+    def save(self, *args, **kwargs):
+        NomeLimpo = " ".join(str(self.Nome).split())
+
+        if NomeLimpo:
+            self.Nome = NomeLimpo[0].upper() + NomeLimpo[1:]
+
+        super().save(*args, **kwargs)
+
     def clean(self):
         super().clean()
 
@@ -213,6 +221,7 @@ class LoteEstoque(models.Model):
         on_delete=models.PROTECT,
         related_name="LotesEstoque",
     )
+    Numero = models.PositiveIntegerField(editable=False)
     QuantidadeInicial = models.DecimalField(
         max_digits=12,
         decimal_places=3,
@@ -243,11 +252,32 @@ class LoteEstoque(models.Model):
 
     class Meta:
         ordering = ["CriadoEm", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["Produto", "Numero"],
+                name="LoteNumeroUnicoPorProduto",
+            )
+        ]
         verbose_name = "lote de estoque"
         verbose_name_plural = "lotes de estoque"
 
     def __str__(self):
-        return f"{self.Produto.Nome} - lote #{self.pk}"
+        return f"{self.Produto.Nome} - lote #{self.Numero}"
+
+    def save(self, *args, **kwargs):
+        if self.Numero is None:
+            UltimoNumero = (
+                type(self).objects.filter(Produto_id=self.Produto_id).aggregate(
+                    MaiorNumero=models.Max("Numero")
+                )["MaiorNumero"]
+                or 0
+            )
+            self.Numero = UltimoNumero + 1
+
+        super().save(*args, **kwargs)
+
+    def ObterNumeroNoProduto(self):
+        return self.Numero
 
     def ControlaQuantidadeEstoque(self):
         return self.Produto.ControlaQuantidadeEstoque()

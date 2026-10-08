@@ -1,10 +1,12 @@
 """Componentes de cadastro e manutenção de produtos."""
+from datetime import date
 from html import escape
 
 from django.db import transaction
 from django.http import HttpResponse
 from django.middleware.csrf import get_token as ObterTokenCsrf
 from django.shortcuts import get_object_or_404, redirect
+from django.utils import timezone
 from django.views.decorators.http import require_POST as ExigirPost
 
 from componentes.LayoutBase import RenderizarLayoutBase
@@ -70,6 +72,9 @@ def RenderizarLotesProduto(ProdutoEdicao, TokenCsrf):
     Linhas = []
 
     for Lote in Lotes:
+        NumeroLote = Lote.ObterNumeroNoProduto()
+        DataEntrada = timezone.localtime(Lote.CriadoEm).date()
+
         if ProdutoEdicao.EhControladoPorDisponibilidade():
             Saldo = "Disponível" if Lote.Disponivel else "Indisponível"
         else:
@@ -79,10 +84,10 @@ def RenderizarLotesProduto(ProdutoEdicao, TokenCsrf):
             )
 
         Situacao = "Ativo" if Lote.EstaDisponivelParaVenda() else "Encerrado"
-        Acao = ""
+        AcaoEncerrar = ""
 
         if Lote.Ativo:
-            Acao = f"""
+            AcaoEncerrar = f"""
             <form
                 method="post"
                 action="/estoque/{ProdutoEdicao.id}/lotes/{Lote.id}/encerrar"
@@ -93,16 +98,44 @@ def RenderizarLotesProduto(ProdutoEdicao, TokenCsrf):
             </form>
             """
 
+        AcaoExcluir = f"""
+        <form
+            method="post"
+            action="/estoque/{ProdutoEdicao.id}/lotes/{Lote.id}/excluir"
+            onsubmit="return confirm('Excluir este lote? O saldo dele será removido do estoque.');"
+        >
+            <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
+            <button class="BotaoExcluirLote" type="submit">Excluir</button>
+        </form>
+        """
+        Acoes = f'<div class="AcoesLote">{AcaoEncerrar}{AcaoExcluir}</div>'
+
         Linhas.append(
             f"""
             <tr>
-                <td><strong>#{Lote.id}</strong><small>{Lote.CriadoEm.strftime('%d/%m/%Y')}</small></td>
+                <td><strong>#{NumeroLote}</strong></td>
+                <td>
+                    <form class="FormularioDataLote" method="post" action="/estoque/{ProdutoEdicao.id}/lotes/{Lote.id}/data">
+                        <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
+                        <label class="SomenteLeitorTela" for="DataLote-{Lote.id}">Data de entrada do lote #{NumeroLote}</label>
+                        <input
+                            id="DataLote-{Lote.id}"
+                            class="CampoDataLote"
+                            type="date"
+                            name="DataEntrada"
+                            value="{DataEntrada.isoformat()}"
+                            max="{timezone.localdate().isoformat()}"
+                            required
+                        >
+                        <button class="BotaoSalvarDataLote" type="submit">Salvar</button>
+                    </form>
+                </td>
                 <td>{escape(Lote.Fornecedor.Nome)}</td>
                 <td>R$ {FormatarValorMoeda(Lote.PrecoCusto)}</td>
                 <td>R$ {FormatarValorMoeda(Lote.PrecoVenda)}</td>
                 <td>{escape(Saldo)}</td>
                 <td><span class="SituacaoLote {'Ativo' if Lote.EstaDisponivelParaVenda() else 'Encerrado'}">{Situacao}</span></td>
-                <td>{Acao}</td>
+                <td>{Acoes}</td>
             </tr>
             """
         )
@@ -113,6 +146,7 @@ def RenderizarLotesProduto(ProdutoEdicao, TokenCsrf):
             <thead>
                 <tr>
                     <th>Lote</th>
+                    <th>Data de entrada</th>
                     <th>Fornecedor</th>
                     <th>Preço de custo</th>
                     <th>Preço de venda</th>
@@ -143,7 +177,7 @@ def ComponenteEditarProdutoComLotes(Request, ProdutoEdicao):
             LoteCriado = FormularioLote.CriarLote()
             DefinirMensagemProduto(
                 Request,
-                f"Lote #{LoteCriado.id} adicionado a {ProdutoEdicao.Nome}.",
+                f"Lote #{LoteCriado.ObterNumeroNoProduto()} adicionado a {ProdutoEdicao.Nome}.",
             )
             return redirect("EditarProduto", ProdutoId=ProdutoEdicao.id)
     elif Request.method == "POST":
@@ -266,6 +300,30 @@ def ComponenteEditarProdutoComLotes(Request, ProdutoEdicao):
         .TabelaLotes td strong,
         .TabelaLotes td small {{ display: block; }}
         .TabelaLotes td small {{ margin-top: 3px; color: #667482; }}
+        .FormularioDataLote {{ display: flex; align-items: center; gap: 6px; }}
+        .CampoDataLote {{
+            min-height: 34px;
+            width: 138px;
+            padding: 0 7px;
+            border: 1px solid #cbd6df;
+            border-radius: 5px;
+            color: #26313d;
+            background: #ffffff;
+            font: inherit;
+            font-size: 12px;
+        }}
+        .BotaoSalvarDataLote {{
+            min-height: 34px;
+            padding: 0 9px;
+            border: 1px solid #9dcbe4;
+            border-radius: 5px;
+            color: #0677b5;
+            background: #e5f4fc;
+            font: inherit;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+        }}
         .SituacaoLote {{
             display: inline-flex;
             min-height: 26px;
@@ -277,6 +335,7 @@ def ComponenteEditarProdutoComLotes(Request, ProdutoEdicao):
         }}
         .SituacaoLote.Ativo {{ color: #0c614f; background: #dff4ed; }}
         .SituacaoLote.Encerrado {{ color: #6b7783; background: #e9eef1; }}
+        .AcoesLote {{ display: flex; align-items: center; gap: 6px; }}
         .BotaoEncerrarLote {{
             min-height: 34px;
             padding: 0 11px;
@@ -284,6 +343,18 @@ def ComponenteEditarProdutoComLotes(Request, ProdutoEdicao):
             border-radius: 5px;
             color: #972d26;
             background: #fff3f2;
+            font: inherit;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+        }}
+        .BotaoExcluirLote {{
+            min-height: 34px;
+            padding: 0 11px;
+            border: 1px solid #e2a6a1;
+            border-radius: 5px;
+            color: #a12c25;
+            background: #ffffff;
             font: inherit;
             font-size: 12px;
             font-weight: 700;
@@ -589,6 +660,67 @@ def ComponenteEncerrarLote(Request, ProdutoId, LoteId):
     ProdutoEdicao.SincronizarResumoLotes()
     DefinirMensagemProduto(
         Request,
-        f"Lote #{Lote.id} encerrado. O restante do estoque continua disponível.",
+        f"Lote #{Lote.ObterNumeroNoProduto()} encerrado. O restante do estoque continua disponível.",
     )
+    return redirect("EditarProduto", ProdutoId=ProdutoEdicao.id)
+
+
+@ExigirPost
+def ComponenteAtualizarDataLote(Request, ProdutoId, LoteId):
+    ProdutoEdicao = get_object_or_404(Produto, pk=ProdutoId, Ativo=True)
+    Lote = get_object_or_404(
+        LoteEstoque,
+        pk=LoteId,
+        Produto=ProdutoEdicao,
+    )
+
+    try:
+        DataEntrada = date.fromisoformat(Request.POST.get("DataEntrada", ""))
+    except ValueError:
+        DefinirMensagemProduto(Request, "Informe uma data de entrada válida.", "erro")
+        return redirect("EditarProduto", ProdutoId=ProdutoEdicao.id)
+
+    if DataEntrada > timezone.localdate():
+        DefinirMensagemProduto(
+            Request,
+            "A data de entrada não pode estar no futuro.",
+            "erro",
+        )
+        return redirect("EditarProduto", ProdutoId=ProdutoEdicao.id)
+
+    DataAtual = timezone.localtime(Lote.CriadoEm)
+    NovaData = DataAtual.replace(
+        year=DataEntrada.year,
+        month=DataEntrada.month,
+        day=DataEntrada.day,
+    )
+    LoteEstoque.objects.filter(pk=Lote.pk).update(CriadoEm=NovaData)
+    DefinirMensagemProduto(
+        Request,
+        f"Data do lote #{Lote.ObterNumeroNoProduto()} atualizada.",
+    )
+    return redirect("EditarProduto", ProdutoId=ProdutoEdicao.id)
+
+
+@ExigirPost
+def ComponenteExcluirLote(Request, ProdutoId, LoteId):
+    ProdutoEdicao = get_object_or_404(Produto, pk=ProdutoId, Ativo=True)
+    Lote = get_object_or_404(
+        LoteEstoque,
+        pk=LoteId,
+        Produto=ProdutoEdicao,
+    )
+    NumeroLote = Lote.Numero
+
+    if Lote.ItensVendidos.exists():
+        DefinirMensagemProduto(
+            Request,
+            f"O lote #{NumeroLote} possui vendas registradas e não pode ser excluído. Use Encerrar para preservar o histórico.",
+            "erro",
+        )
+        return redirect("EditarProduto", ProdutoId=ProdutoEdicao.id)
+
+    Lote.delete()
+    ProdutoEdicao.SincronizarResumoLotes()
+    DefinirMensagemProduto(Request, f"Lote #{NumeroLote} excluído do estoque.")
     return redirect("EditarProduto", ProdutoId=ProdutoEdicao.id)

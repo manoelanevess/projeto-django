@@ -81,6 +81,7 @@ def GerarResumoProdutos(Busca="", Estoque="", Categoria="", Fornecedor=""):
         LotesFormatados = [
             {
                 "Id": Lote.id,
+                "Numero": Lote.Numero,
                 "Fornecedor": Lote.Fornecedor.Nome,
                 "Quantidade": Lote.QuantidadeDisponivel,
                 "EstoqueDescricao": (

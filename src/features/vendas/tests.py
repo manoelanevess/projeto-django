@@ -77,6 +77,55 @@ class TesteCarrinhosVenda(TestCase):
             ["Arroz 1 kg"],
         )
 
+    def test_PesquisaDoCarrinhoIgnoraAcentos(self):
+        Produto.objects.create(
+            Nome="Feijão Carioca",
+            Categoria="Alimentos",
+            Marca="Sabor da Terra",
+            Fornecedor=self.Distribuidora,
+            UnidadeVenda=Produto.UNIDADE,
+            QuantidadeEstoque=Decimal("8.000"),
+            EstoqueMinimo=Decimal("2.000"),
+            PrecoCusto=Decimal("4.00"),
+            PrecoVenda=Decimal("7.00"),
+        )
+
+        Resposta = self.client.get("/carrinho/pesquisar", {"busca": "feijao"})
+
+        self.assertEqual(
+            [ProdutoVenda["Nome"] for ProdutoVenda in Resposta.json()["Produtos"]],
+            ["Feijão Carioca"],
+        )
+
+    def test_CarrinhoMostraMarcaAoLadoDoNomeDoProduto(self):
+        self.Arroz.Marca = "Tordilho"
+        self.Arroz.save(update_fields=["Marca"])
+        self.AdicionarProduto("1", self.Arroz, "1")
+
+        Resposta = self.client.get("/carrinho", {"busca": "Arroz"})
+
+        self.assertContains(
+            Resposta,
+            '<span class="MarcaProduto">Tordilho</span>',
+            html=True,
+        )
+
+    def test_NaoExcluiLoteUsadoEmVenda(self):
+        Lote = self.Arroz.LotesEstoque.get()
+        self.AdicionarProduto("1", self.Arroz, "1")
+        self.client.post(
+            "/carrinho/concluir",
+            {"carrinho": "1", "forma_pagamento": Venda.PIX},
+        )
+
+        Resposta = self.client.post(
+            f"/estoque/{self.Arroz.id}/lotes/{Lote.id}/excluir",
+            follow=True,
+        )
+
+        self.assertTrue(LoteEstoque.objects.filter(pk=Lote.pk).exists())
+        self.assertContains(Resposta, "possui vendas registradas")
+
     def test_PesquisaIncrementalVaziaRetornaListaVaziaEFormularioContinuaDisponivel(self):
         RespostaBusca = self.client.get("/carrinho/pesquisar", {"busca": ""})
         PaginaCarrinho = self.client.get("/carrinho?carrinho=1")
@@ -320,6 +369,10 @@ class TesteCarrinhosVenda(TestCase):
         self.assertCountEqual(
             [Opcao["Preco"] for Opcao in Opcoes],
             ["10,00", "12,00"],
+        )
+        self.assertCountEqual(
+            [Opcao["NumeroLote"] for Opcao in Opcoes],
+            [1, 2],
         )
 
         self.client.post(

@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model as ObterModeloUsuario
 from django.test import TestCase
+from django.utils import timezone
 
 from features.fornecedor.models import Fornecedor
 
@@ -89,6 +90,42 @@ class TesteManutencaoEstoque(TestCase):
             html=False,
         )
 
+    def test_BuscaProdutoIgnoraAcentos(self):
+        Produto.objects.create(
+            Nome="Feijão Carioca",
+            Categoria="Alimentos",
+            Marca="Sabor da Terra",
+            Fornecedor=self.Distribuidora,
+            UnidadeVenda=Produto.UNIDADE,
+            QuantidadeEstoque=Decimal("8.000"),
+            EstoqueMinimo=Decimal("2.000"),
+            PrecoCusto=Decimal("4.00"),
+            PrecoVenda=Decimal("7.00"),
+        )
+
+        Resposta = self.client.get("/estoque", {"busca": "feijao"})
+
+        self.assertContains(Resposta, "Feijão Carioca")
+
+    def test_CadastroColocaPrimeiraLetraDoProdutoEmMaiuscula(self):
+        Resposta = self.client.post(
+            "/estoque/novo",
+            {
+                "Nome": "caderno universitário",
+                "Categoria": "Papelaria",
+                "Marca": "Académie",
+                "Fornecedor": self.Distribuidora.id,
+                "UnidadeVenda": Produto.UNIDADE,
+                "PrecoCusto": "12.00",
+                "PrecoVenda": "18.00",
+                "QuantidadeEstoque": "5",
+                "EstoqueMinimo": "1",
+            },
+        )
+
+        self.assertRedirects(Resposta, "/estoque")
+        self.assertTrue(Produto.objects.filter(Nome="Caderno universitário").exists())
+
     def test_EditaProduto(self):
         Resposta = self.client.post(
             f"/estoque/{self.Arroz.id}/editar",
@@ -112,6 +149,18 @@ class TesteManutencaoEstoque(TestCase):
     def test_AdicionaNovaEntradaSemAlterarLoteAnterior(self):
         LoteAnterior = self.Arroz.LotesEstoque.get()
 
+        Produto.objects.create(
+            Nome="Feijão Preto",
+            Categoria="Mercearia",
+            Marca="Sabor da Terra",
+            Fornecedor=self.Distribuidora,
+            UnidadeVenda=Produto.UNIDADE,
+            QuantidadeEstoque=Decimal("4.000"),
+            EstoqueMinimo=Decimal("1.000"),
+            PrecoCusto=Decimal("4.00"),
+            PrecoVenda=Decimal("7.00"),
+        )
+
         Resposta = self.client.post(
             f"/estoque/{self.Arroz.id}/editar",
             {
@@ -129,13 +178,18 @@ class TesteManutencaoEstoque(TestCase):
         self.assertEqual(LoteAnterior.QuantidadeDisponivel, Decimal("12.000"))
         self.assertEqual(LoteAnterior.PrecoCusto, Decimal("5.00"))
 
-        NovoLote = LoteEstoque.objects.exclude(pk=LoteAnterior.pk).get()
+        NovoLote = self.Arroz.LotesEstoque.exclude(pk=LoteAnterior.pk).get()
         self.assertEqual(NovoLote.QuantidadeDisponivel, Decimal("6.000"))
         self.assertEqual(NovoLote.PrecoCusto, Decimal("5.75"))
         self.assertEqual(NovoLote.PrecoVenda, Decimal("9.25"))
+        self.assertGreater(NovoLote.id, 2)
+        self.assertEqual(LoteAnterior.ObterNumeroNoProduto(), 1)
+        self.assertEqual(NovoLote.ObterNumeroNoProduto(), 2)
         self.Arroz.refresh_from_db()
         self.assertEqual(self.Arroz.QuantidadeEstoque, Decimal("18.000"))
-        self.assertContains(self.client.get(Resposta.url), "Entradas de estoque")
+        PaginaEdicao = self.client.get(Resposta.url)
+        self.assertContains(PaginaEdicao, "Entradas de estoque")
+        self.assertContains(PaginaEdicao, "<strong>#2</strong>", html=True)
 
     def test_ExclusaoLogicaPreservaProdutoEEscondeDaLista(self):
         Resposta = self.client.post(f"/estoque/{self.Arroz.id}/excluir")
@@ -145,6 +199,51 @@ class TesteManutencaoEstoque(TestCase):
         self.assertFalse(self.Arroz.Ativo)
         self.assertFalse(self.Arroz.Disponivel)
         self.assertNotContains(self.client.get("/estoque"), "Arroz Branco")
+
+    def test_CorrigeDataDeEntradaDoLote(self):
+        Lote = self.Arroz.LotesEstoque.get()
+
+        Resposta = self.client.post(
+            f"/estoque/{self.Arroz.id}/lotes/{Lote.id}/data",
+            {"DataEntrada": "2026-09-28"},
+        )
+
+        self.assertRedirects(Resposta, f"/estoque/{self.Arroz.id}/editar")
+        Lote.refresh_from_db()
+        self.assertEqual(timezone.localtime(Lote.CriadoEm).date().isoformat(), "2026-09-28")
+        self.assertContains(self.client.get(Resposta.url), 'value="2026-09-28"')
+
+    def test_ExcluiLoteSemVendaSemRenumerarLotesPosteriores(self):
+        LoteDois = LoteEstoque.objects.create(
+            Produto=self.Arroz,
+            Fornecedor=self.Distribuidora,
+            QuantidadeInicial=Decimal("2.000"),
+            QuantidadeDisponivel=Decimal("2.000"),
+            PrecoCusto=Decimal("5.50"),
+            PrecoVenda=Decimal("9.00"),
+        )
+        LoteTres = LoteEstoque.objects.create(
+            Produto=self.Arroz,
+            Fornecedor=self.Distribuidora,
+            QuantidadeInicial=Decimal("3.000"),
+            QuantidadeDisponivel=Decimal("3.000"),
+            PrecoCusto=Decimal("6.00"),
+            PrecoVenda=Decimal("10.00"),
+        )
+        self.Arroz.SincronizarResumoLotes()
+
+        Resposta = self.client.post(
+            f"/estoque/{self.Arroz.id}/lotes/{LoteDois.id}/excluir",
+            follow=True,
+        )
+
+        self.assertFalse(LoteEstoque.objects.filter(pk=LoteDois.pk).exists())
+        LoteTres.refresh_from_db()
+        self.Arroz.refresh_from_db()
+        self.assertEqual(LoteTres.Numero, 3)
+        self.assertEqual(self.Arroz.QuantidadeEstoque, Decimal("15.000"))
+        self.assertContains(Resposta, "Lote #2 excluído")
+        self.assertContains(Resposta, "<strong>#3</strong>", html=True)
 
     def test_DashboardMantemIndicadoresEHistorico(self):
         Resposta = self.client.get("/dashboard")

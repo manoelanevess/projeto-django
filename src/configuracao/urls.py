@@ -13,7 +13,9 @@ from features.fornecedor.ComponenteFornecedor import (
 )
 from features.pagina_principal.ComponentePaginaPrincipal import ComponentePaginaPrincipal
 from features.produtos.ComponenteProduto import (
+    ComponenteAtualizarDataLote,
     ComponenteEncerrarLote,
+    ComponenteExcluirLote,
     ComponenteExcluirProduto,
     ComponenteFormularioProduto,
     ComponenteRedirecionarProdutos,
@@ -93,6 +95,16 @@ urlpatterns = [
         "estoque/<int:ProdutoId>/excluir",
         ProtegerComponente(ComponenteExcluirProduto),
         name="ExcluirProduto",
+    ),
+    path(
+        "estoque/<int:ProdutoId>/lotes/<int:LoteId>/data",
+        ProtegerComponente(ComponenteAtualizarDataLote),
+        name="AtualizarDataLoteEstoque",
+    ),
+    path(
+        "estoque/<int:ProdutoId>/lotes/<int:LoteId>/excluir",
+        ProtegerComponente(ComponenteExcluirLote),
+        name="ExcluirLoteEstoque",
     ),
     path(
         "estoque/<int:ProdutoId>/lotes/<int:LoteId>/encerrar",

@@ -94,8 +94,11 @@ def RenderizarItensPainel(ResumoCarrinho, TokenCsrf, CarrinhosAbertos):
             f"""
             <div class="ItemPainelCarrinho">
                 <div>
-                    <strong>{escape(ProdutoVenda.Nome)}</strong>
-                    <small>Lote #{LoteVenda.id} · {escape(LoteVenda.Fornecedor.Nome)}</small>
+                    <div class="LinhaNomeProduto">
+                        <strong>{escape(ProdutoVenda.Nome)}</strong>
+                        <span class="MarcaProduto">{escape(ProdutoVenda.Marca or 'Sem marca')}</span>
+                    </div>
+                    <small>Lote #{Item['NumeroLote']} · {escape(LoteVenda.Fornecedor.Nome)}</small>
                     <small>{Item['QuantidadeFormatada']} {Item['Unidade']} × R$ {Item['PrecoFormatado']}</small>
                 </div>
                 <span>R$ {Item['SubtotalFormatado']}</span>
@@ -499,6 +502,8 @@ def ObterEstilosPaginaPrincipal():
         .ResultadoProdutoPainel strong,
         .ResultadoProdutoPainel small { display: block; }
         .ResultadoProdutoPainel small { margin-top: 3px; color: #667482; }
+        .LinhaNomeProduto { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+        .MarcaProduto { color: #202b36; font-size: 12px; font-weight: 600; }
         .FormularioResultadoPainel { display: grid; grid-template-columns: 82px 1fr; gap: 7px; }
         .FormularioResultadoPainel input[type="number"] {
             min-width: 0;
@@ -705,11 +710,17 @@ def ObterScriptPaginaPrincipal(
                 Resultado.className = "ResultadoProdutoPainel";
 
                 const Dados = document.createElement("div");
+                const LinhaNome = document.createElement("div");
+                LinhaNome.className = "LinhaNomeProduto";
                 const Nome = document.createElement("strong");
                 Nome.textContent = Produto.Nome;
+                const Marca = document.createElement("span");
+                Marca.className = "MarcaProduto";
+                Marca.textContent = Produto.Marca;
+                LinhaNome.append(Nome, Marca);
                 const Detalhes = document.createElement("small");
-                Detalhes.textContent = `${Produto.Categoria} · ${Produto.Marca} · Lote #${Produto.LoteId} · ${Produto.Fornecedor} · Custo R$ ${Produto.PrecoCusto} · Venda R$ ${Produto.Preco} / ${Produto.Unidade} · ${Produto.Estoque}`;
-                Dados.append(Nome, Detalhes);
+                Detalhes.textContent = `${Produto.Categoria} · Lote #${Produto.NumeroLote} · ${Produto.Fornecedor} · Custo R$ ${Produto.PrecoCusto} · Venda R$ ${Produto.Preco} / ${Produto.Unidade} · ${Produto.Estoque}`;
+                Dados.append(LinhaNome, Detalhes);
 
                 const Formulario = document.createElement("form");
                 Formulario.className = "FormularioResultadoPainel";
@@ -908,6 +919,7 @@ def ComponentePaginaPrincipal(Request):
         {
             "Id": ProdutoEstoque["Id"],
             "LoteId": LoteEstoque["Id"],
+            "NumeroLote": LoteEstoque["Numero"],
             "Nome": ProdutoEstoque["Nome"],
             "Categoria": ProdutoEstoque["Categoria"],
             "Marca": ProdutoEstoque["Marca"],

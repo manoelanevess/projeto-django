@@ -10,6 +10,15 @@ from features.fornecedor.models import Fornecedor
 from .models import LoteEstoque, Produto
 
 
+def NormalizarNomeProduto(Nome):
+    NomeLimpo = " ".join(str(Nome).split())
+
+    if not NomeLimpo:
+        return NomeLimpo
+
+    return NomeLimpo[0].upper() + NomeLimpo[1:]
+
+
 class FormularioProduto(forms.ModelForm):
     class Meta:
         model = Produto
@@ -74,7 +83,7 @@ class FormularioProduto(forms.ModelForm):
         return " ".join(str(self.cleaned_data.get(NomeCampo, "")).split())
 
     def clean_Nome(self):
-        Nome = self.LimparTexto("Nome")
+        Nome = NormalizarNomeProduto(self.cleaned_data.get("Nome", ""))
         ProdutosIguais = Produto.objects.filter(Nome__iexact=Nome)
 
         if self.instance.pk:
@@ -161,7 +170,7 @@ class FormularioEdicaoProduto(forms.ModelForm):
         return " ".join(str(self.cleaned_data.get(NomeCampo, "")).split())
 
     def clean_Nome(self):
-        Nome = self.LimparTexto("Nome")
+        Nome = NormalizarNomeProduto(self.cleaned_data.get("Nome", ""))
         ProdutosIguais = Produto.objects.filter(Nome__iexact=Nome).exclude(
             pk=self.instance.pk
         )

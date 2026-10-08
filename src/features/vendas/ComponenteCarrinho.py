@@ -138,6 +138,7 @@ def RenderizarResultadosBusca(ProdutosEncontrados, TokenCsrf, NumeroCarrinho, Bu
         RotuloQuantidade = ProdutoVenda.ObterRotuloQuantidadeVenda()
 
         for LoteVenda in ObterLotesDisponiveisProduto(ProdutoVenda):
+            NumeroLote = LoteVenda.ObterNumeroNoProduto()
             FornecedorSeguro = escape(LoteVenda.Fornecedor.Nome)
             Estoque = (
                 escape(LoteVenda.ObterDescricaoEstoque())
@@ -156,8 +157,11 @@ def RenderizarResultadosBusca(ProdutosEncontrados, TokenCsrf, NumeroCarrinho, Bu
                 f"""
                 <article class="ProdutoResultado">
                     <div class="DadosProdutoResultado">
-                        <strong>{NomeSeguro}</strong>
-                        <span>{CategoriaSegura} · {MarcaSegura} · Lote #{LoteVenda.id}</span>
+                        <div class="LinhaNomeProduto">
+                            <strong>{NomeSeguro}</strong>
+                            <span class="MarcaProduto">{MarcaSegura}</span>
+                        </div>
+                        <span>{CategoriaSegura} · Lote #{NumeroLote}</span>
                         <small>{FornecedorSeguro} · Custo R$ {PrecoCusto} · Venda R$ {PrecoVenda} / {Unidade} · Estoque: {Estoque}</small>
                     </div>
                     <form class="FormularioAdicionar" method="post" action="/carrinho/adicionar">
@@ -206,6 +210,7 @@ def ComponentePesquisarProdutos(Request):
                 {
                     "Id": ProdutoVenda.id,
                     "LoteId": LoteVenda.id,
+                    "NumeroLote": LoteVenda.ObterNumeroNoProduto(),
                     "Nome": ProdutoVenda.Nome,
                     "Categoria": ProdutoVenda.Categoria or "Sem categoria",
                     "Marca": ProdutoVenda.Marca or "Sem marca",
@@ -246,8 +251,11 @@ def RenderizarItensCarrinho(ResumoCarrinho, TokenCsrf, NumeroCarrinho):
             f"""
             <tr>
                 <td>
-                    <strong>{escape(ProdutoVenda.Nome)}</strong>
-                    <small>Lote #{LoteVenda.id} · {escape(LoteVenda.Fornecedor.Nome)}</small>
+                    <div class="LinhaNomeProduto">
+                        <strong>{escape(ProdutoVenda.Nome)}</strong>
+                        <span class="MarcaProduto">{escape(ProdutoVenda.Marca or 'Sem marca')}</span>
+                    </div>
+                    <small>Lote #{Item['NumeroLote']} · {escape(LoteVenda.Fornecedor.Nome)}</small>
                     <small>{Item['QuantidadeFormatada']} {Item['Unidade']} × R$ {Item['PrecoFormatado']}</small>
                 </td>
                 <td>R$ {Item['SubtotalFormatado']}</td>
@@ -455,6 +463,9 @@ def ComponenteCarrinho(Request):
         .DadosProdutoResultado strong {{ font-size: 16px; }}
         .DadosProdutoResultado span,
         .DadosProdutoResultado small {{ color: #667482; }}
+        .LinhaNomeProduto {{ display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }}
+        .DadosProdutoResultado .MarcaProduto,
+        .MarcaProduto {{ color: #202b36; font-size: 13px; font-weight: 600; }}
 
         .FormularioAdicionar {{
             display: grid;
@@ -859,9 +870,14 @@ def ComponenteCarrinho(Request):
                 Produtos.forEach((Produto) => {{
                     const Cartao = CriarElemento("article", "ProdutoResultado");
                     const Dados = CriarElemento("div", "DadosProdutoResultado");
-                    Dados.append(
+                    const LinhaNome = CriarElemento("div", "LinhaNomeProduto");
+                    LinhaNome.append(
                         CriarElemento("strong", "", Produto.Nome),
-                        CriarElemento("span", "", `${{Produto.Categoria}} · ${{Produto.Marca}} · Lote #${{Produto.LoteId}}`),
+                        CriarElemento("span", "MarcaProduto", Produto.Marca),
+                    );
+                    Dados.append(
+                        LinhaNome,
+                        CriarElemento("span", "", `${{Produto.Categoria}} · Lote #${{Produto.NumeroLote}}`),
                         CriarElemento(
                             "small",
                             "",

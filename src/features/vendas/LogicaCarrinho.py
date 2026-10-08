@@ -296,6 +296,7 @@ def MontarResumoCarrinho(Request, NumeroCarrinho="1"):
             {
                 "Produto": ProdutoVenda,
                 "Lote": LoteVenda,
+                "NumeroLote": LoteVenda.ObterNumeroNoProduto(),
                 "ChaveItem": ChaveItem,
                 "Quantidade": Quantidade,
                 "QuantidadeFormatada": FormatarQuantidade(Quantidade),

@@ -33,6 +33,19 @@ def MontarFiltroProdutosDisponiveis():
     )
 
 
+def MontarFiltroBuscaProdutos(Busca):
+    return (
+        Q(Nome__unaccent__icontains=Busca)
+        | Q(Categoria__unaccent__icontains=Busca)
+        | Q(Marca__unaccent__icontains=Busca)
+        | Q(Fornecedor__Nome__unaccent__icontains=Busca)
+        | Q(
+            LotesEstoque__Fornecedor__Nome__unaccent__icontains=Busca,
+            LotesEstoque__Ativo=True,
+        )
+    )
+
+
 def BuscarProdutos(Busca="", Estoque="", Categoria="", Fornecedor=""):
     Produtos = (
         Produto.objects.filter(Ativo=True)
@@ -41,16 +54,7 @@ def BuscarProdutos(Busca="", Estoque="", Categoria="", Fornecedor=""):
     )
 
     if Busca:
-        Produtos = Produtos.filter(
-            Q(Nome__icontains=Busca)
-            | Q(Categoria__icontains=Busca)
-            | Q(Marca__icontains=Busca)
-            | Q(Fornecedor__Nome__icontains=Busca)
-            | Q(
-                LotesEstoque__Fornecedor__Nome__icontains=Busca,
-                LotesEstoque__Ativo=True,
-            )
-        )
+        Produtos = Produtos.filter(MontarFiltroBuscaProdutos(Busca))
 
     if Categoria:
         Produtos = Produtos.filter(Categoria__iexact=Categoria)
@@ -97,14 +101,7 @@ def BuscarProdutosParaVenda(Busca):
         Produto.objects.select_related("Fornecedor")
         .prefetch_related(ObterPrefetchLotesAtivos())
         .filter(
-            Q(Nome__icontains=Busca)
-            | Q(Categoria__icontains=Busca)
-            | Q(Marca__icontains=Busca)
-            | Q(Fornecedor__Nome__icontains=Busca)
-            | Q(
-                LotesEstoque__Fornecedor__Nome__icontains=Busca,
-                LotesEstoque__Ativo=True,
-            ),
+            MontarFiltroBuscaProdutos(Busca),
             Ativo=True,
         )
         .filter(MontarFiltroProdutosDisponiveis())
