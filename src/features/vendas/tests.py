@@ -11,7 +11,13 @@ from features.produtos.models import LoteEstoque, Produto
 
 from .LogicaCarrinho import ObterChaveLote
 from .LogicaVenda import ConsolidarVendasDeMesesAnteriores, ObterResumoFinanceiro
-from .models import ResumoVendaMensal, Venda
+from .models import (
+    ContaCliente,
+    LancamentoContaCliente,
+    RegistroVendaAntiga,
+    ResumoVendaMensal,
+    Venda,
+)
 
 
 class TesteCarrinhosVenda(TestCase):
@@ -76,6 +82,18 @@ class TesteCarrinhosVenda(TestCase):
             [Produto["Nome"] for Produto in RespostaArroz.json()["Produtos"]],
             ["Arroz 1 kg"],
         )
+
+    def CriarNovoLoteArroz(self):
+        LoteNovo = LoteEstoque.objects.create(
+            Produto=self.Arroz,
+            Fornecedor=self.Distribuidora,
+            QuantidadeInicial=Decimal("5.000"),
+            QuantidadeDisponivel=Decimal("5.000"),
+            PrecoCusto=Decimal("7.00"),
+            PrecoVenda=Decimal("12.00"),
+        )
+        self.Arroz.SincronizarResumoLotes()
+        return LoteNovo
 
     def test_PesquisaDoCarrinhoIgnoraAcentos(self):
         Produto.objects.create(
@@ -351,56 +369,56 @@ class TesteCarrinhosVenda(TestCase):
         self.assertContains(PaginaDashboard, "3 un")
         self.assertContains(PaginaDashboard, "5 un")
 
-    def test_CarrinhoEscolheLotesComPrecosDiferentes(self):
+    def test_CarrinhoDistribuiQuantidadeEntreLotesComPrecosDiferentes(self):
         LoteAntigo = self.Arroz.LotesEstoque.get()
-        LoteNovo = LoteEstoque.objects.create(
-            Produto=self.Arroz,
-            Fornecedor=self.Distribuidora,
-            QuantidadeInicial=Decimal("5.000"),
-            QuantidadeDisponivel=Decimal("5.000"),
-            PrecoCusto=Decimal("7.00"),
-            PrecoVenda=Decimal("12.00"),
-        )
-        self.Arroz.SincronizarResumoLotes()
+        LoteNovo = self.CriarNovoLoteArroz()
 
         Pesquisa = self.client.get("/carrinho/pesquisar", {"busca": "Arroz"})
         Opcoes = Pesquisa.json()["Produtos"]
-        self.assertEqual(len(Opcoes), 2)
-        self.assertCountEqual(
-            [Opcao["Preco"] for Opcao in Opcoes],
-            ["10,00", "12,00"],
-        )
-        self.assertCountEqual(
-            [Opcao["NumeroLote"] for Opcao in Opcoes],
-            [1, 2],
-        )
+        self.assertEqual(len(Opcoes), 1)
+        self.assertEqual(Opcoes[0]["Preco"], "10,00")
+        self.assertEqual(Opcoes[0]["Estoque"], "15 un")
+        self.assertEqual(Decimal(Opcoes[0]["EstoqueMaximo"]), Decimal("15.000"))
+        self.assertNotIn("LoteId", Opcoes[0])
+        self.assertNotIn("NumeroLote", Opcoes[0])
+        self.assertNotIn("PrecoCusto", Opcoes[0])
 
-        self.client.post(
-            "/carrinho/adicionar",
+        PaginaCarrinho = self.client.get("/carrinho", {"busca": "Arroz"})
+        self.assertContains(PaginaCarrinho, '<article class="ProdutoResultado">', count=1)
+        self.assertNotContains(PaginaCarrinho, 'name="lote"')
+        self.assertNotContains(PaginaCarrinho, "Lote #")
+        self.assertNotContains(PaginaCarrinho, "Custo R$")
+
+        self.AdicionarProduto("2", self.Arroz, "1")
+        CarrinhoPadrao = self.client.session["CarrinhosVenda"]["2"]
+        self.assertEqual(
+            CarrinhoPadrao,
+            {ObterChaveLote(LoteAntigo.id): "1.000"},
+        )
+        self.client.post("/carrinho/cancelar", {"carrinho": "2"})
+
+        self.AdicionarProduto("1", self.Arroz, "2")
+        self.AdicionarProduto("1", self.Arroz, "9")
+        self.assertEqual(
+            self.client.session["CarrinhosVenda"]["1"],
             {
-                "carrinho": "1",
-                "produto": self.Arroz.id,
-                "lote": LoteAntigo.id,
-                "quantidade": "2",
+                ObterChaveLote(LoteAntigo.id): "10.000",
+                ObterChaveLote(LoteNovo.id): "1.000",
             },
         )
-        self.client.post(
-            "/carrinho/adicionar",
-            {
-                "carrinho": "1",
-                "produto": self.Arroz.id,
-                "lote": LoteNovo.id,
-                "quantidade": "1",
-            },
-        )
+        LoteAntigo.refresh_from_db()
+        LoteNovo.refresh_from_db()
+        self.assertEqual(LoteAntigo.QuantidadeDisponivel, Decimal("10.000"))
+        self.assertEqual(LoteNovo.QuantidadeDisponivel, Decimal("5.000"))
+
         self.client.post(
             "/carrinho/concluir",
             {"carrinho": "1", "forma_pagamento": Venda.PIX},
         )
 
         VendaConcluida = Venda.objects.get()
-        self.assertEqual(VendaConcluida.Total, Decimal("32.00"))
-        self.assertEqual(VendaConcluida.Lucro, Decimal("13.00"))
+        self.assertEqual(VendaConcluida.Total, Decimal("112.00"))
+        self.assertEqual(VendaConcluida.Lucro, Decimal("45.00"))
         self.assertEqual(VendaConcluida.Itens.count(), 2)
         self.assertEqual(
             VendaConcluida.Itens.get(Lote=LoteAntigo).CustoUnitario,
@@ -413,9 +431,133 @@ class TesteCarrinhosVenda(TestCase):
         LoteAntigo.refresh_from_db()
         LoteNovo.refresh_from_db()
         self.Arroz.refresh_from_db()
-        self.assertEqual(LoteAntigo.QuantidadeDisponivel, Decimal("8.000"))
+        self.assertEqual(LoteAntigo.QuantidadeDisponivel, Decimal("0.000"))
+        self.assertFalse(LoteAntigo.Ativo)
         self.assertEqual(LoteNovo.QuantidadeDisponivel, Decimal("4.000"))
-        self.assertEqual(self.Arroz.QuantidadeEstoque, Decimal("12.000"))
+        self.assertEqual(self.Arroz.QuantidadeEstoque, Decimal("4.000"))
+
+        NovaPesquisa = self.client.get("/carrinho/pesquisar", {"busca": "Arroz"})
+        self.assertEqual(NovaPesquisa.json()["Produtos"][0]["Preco"], "12,00")
+
+    def test_QuantidadeInsuficienteEntreLotesNaoAlteraCarrinho(self):
+        self.CriarNovoLoteArroz()
+        self.AdicionarProduto("1", self.Arroz, "2")
+        CarrinhoAnterior = self.client.session["CarrinhosVenda"]["1"].copy()
+
+        Resposta = self.client.post(
+            "/carrinho/adicionar",
+            {"carrinho": "1", "produto": self.Arroz.id, "quantidade": "14"},
+            follow=True,
+        )
+
+        self.assertContains(Resposta, "Estoque insuficiente")
+        self.assertContains(Resposta, "Disponível: 13 un")
+        self.assertEqual(self.client.session["CarrinhosVenda"]["1"], CarrinhoAnterior)
+        self.Arroz.refresh_from_db()
+        self.assertEqual(self.Arroz.QuantidadeEstoque, Decimal("15.000"))
+
+    def test_AdicionarIgnoraSelecaoManualDeLoteNovo(self):
+        LoteAntigo = self.Arroz.LotesEstoque.get()
+        LoteNovo = self.CriarNovoLoteArroz()
+
+        self.client.post(
+            "/carrinho/adicionar",
+            {
+                "carrinho": "1",
+                "produto": self.Arroz.id,
+                "lote": LoteNovo.id,
+                "quantidade": "2",
+            },
+        )
+
+        self.assertEqual(
+            self.client.session["CarrinhosVenda"]["1"],
+            {ObterChaveLote(LoteAntigo.id): "2.000"},
+        )
+
+    def test_AdicionarIgnoraLotesEsgotadosEEncerrados(self):
+        LoteAntigo = self.Arroz.LotesEstoque.get()
+        LoteAntigo.QuantidadeDisponivel = Decimal("0.000")
+        LoteAntigo.save(update_fields=["QuantidadeDisponivel"])
+        LoteEncerrado = self.CriarNovoLoteArroz()
+        LoteEncerrado.Ativo = False
+        LoteEncerrado.save(update_fields=["Ativo"])
+        LoteDisponivel = self.CriarNovoLoteArroz()
+
+        self.AdicionarProduto("1", self.Arroz, "3")
+
+        self.assertEqual(
+            self.client.session["CarrinhosVenda"]["1"],
+            {ObterChaveLote(LoteDisponivel.id): "3.000"},
+        )
+
+    def test_ProdutoPorPesoUsaLoteAntigoAteEncerramentoSemBaixaNumerica(self):
+        LoteAntigo = self.Batata.LotesEstoque.get()
+        LoteNovo = LoteEstoque.objects.create(
+            Produto=self.Batata,
+            Fornecedor=self.Hortifruti,
+            PrecoCusto=Decimal("3.00"),
+            PrecoVenda=Decimal("6.00"),
+        )
+        self.Batata.SincronizarResumoLotes()
+
+        self.AdicionarProduto("1", self.Batata, "12.500")
+        self.assertEqual(
+            self.client.session["CarrinhosVenda"]["1"],
+            {ObterChaveLote(LoteAntigo.id): "12.500"},
+        )
+        self.client.post(
+            "/carrinho/concluir",
+            {"carrinho": "1", "forma_pagamento": Venda.PIX},
+        )
+        LoteAntigo.refresh_from_db()
+        self.assertIsNone(LoteAntigo.QuantidadeDisponivel)
+        self.assertTrue(LoteAntigo.Ativo)
+        self.assertEqual(Venda.objects.get().Total, Decimal("50.00"))
+
+        self.client.post(f"/estoque/{self.Batata.id}/lotes/{LoteAntigo.id}/encerrar")
+        self.AdicionarProduto("2", self.Batata, "0.750")
+        self.assertEqual(
+            self.client.session["CarrinhosVenda"]["2"],
+            {ObterChaveLote(LoteNovo.id): "0.750"},
+        )
+
+    def test_QuantidadeFracionadaERepartidaEntreLotesPorMetro(self):
+        Corda = Produto.objects.create(
+            Nome="Corda",
+            Fornecedor=self.Distribuidora,
+            UnidadeVenda=Produto.METRO,
+            QuantidadeEstoque=Decimal("1.250"),
+            PrecoCusto=Decimal("1.00"),
+            PrecoVenda=Decimal("2.00"),
+        )
+        LoteAntigo = Corda.LotesEstoque.get()
+        LoteNovo = LoteEstoque.objects.create(
+            Produto=Corda,
+            Fornecedor=self.Distribuidora,
+            QuantidadeInicial=Decimal("2.500"),
+            QuantidadeDisponivel=Decimal("2.500"),
+            PrecoCusto=Decimal("1.50"),
+            PrecoVenda=Decimal("3.00"),
+        )
+        Corda.SincronizarResumoLotes()
+
+        self.AdicionarProduto("1", Corda, "2")
+        self.assertEqual(
+            self.client.session["CarrinhosVenda"]["1"],
+            {
+                ObterChaveLote(LoteAntigo.id): "1.250",
+                ObterChaveLote(LoteNovo.id): "0.750",
+            },
+        )
+        self.client.post(
+            "/carrinho/concluir",
+            {"carrinho": "1", "forma_pagamento": Venda.PIX},
+        )
+
+        self.assertEqual(Venda.objects.get().Total, Decimal("4.75"))
+        LoteNovo.refresh_from_db()
+        self.assertEqual(LoteNovo.QuantidadeDisponivel, Decimal("1.750"))
 
     def test_ConsolidacaoMensalPreservaTotaisAnuaisEApagaDetalhes(self):
         self.AdicionarProduto("1", self.Arroz, "2")
@@ -433,6 +575,10 @@ class TesteCarrinhosVenda(TestCase):
 
         self.assertEqual(QuantidadeConsolidada, 1)
         self.assertFalse(Venda.objects.exists())
+        RegistroAntigo = RegistroVendaAntiga.objects.get(VendaOriginalId=VendaConcluida.id)
+        self.assertEqual(RegistroAntigo.Total, Decimal("20.00"))
+        self.assertEqual(RegistroAntigo.Itens.count(), 1)
+        self.assertEqual(RegistroAntigo.Itens.get().NomeProduto, "Arroz 1 kg")
         Resumo = ResumoVendaMensal.objects.get(Ano=2026, Mes=9)
         self.assertEqual(Resumo.TotalVendido, Decimal("20.00"))
         self.assertEqual(Resumo.Lucro, Decimal("8.00"))
@@ -441,6 +587,11 @@ class TesteCarrinhosVenda(TestCase):
             date(2026, 10, 1),
         )
         self.assertEqual(ResumoFinanceiro["LucroAno"], Decimal("8.00"))
+        PaginaHistorico = self.client.get("/vendas/historico?busca=Arroz")
+        self.assertContains(PaginaHistorico, "Histórico de vendas")
+        self.assertContains(PaginaHistorico, "Arquivada")
+        self.assertContains(PaginaHistorico, "Itens preservados")
+        self.assertContains(PaginaHistorico, "Arroz 1 kg")
 
     def test_NumeroDeCarrinhoInvalidoNaoAlteraOutroAtendimento(self):
         self.AdicionarProduto("1", self.Arroz, "1")
@@ -464,11 +615,14 @@ class TesteCarrinhosVenda(TestCase):
 
         self.assertEqual(
             Resposta.url,
-            "/?carrinho=2&carrinhos_abertos=1%2C2&busca_carrinho=arroz",
+            "/?carrinho=2&carrinhos_abertos=1%2C2%2C3&busca_carrinho=arroz",
         )
         PaginaPrincipal = self.client.get(Resposta.url)
         self.assertContains(PaginaPrincipal, "PainelCarrinho-1")
         self.assertContains(PaginaPrincipal, "PainelCarrinho-2")
+        self.assertContains(PaginaPrincipal, "PainelCarrinho-3")
+        self.assertContains(PaginaPrincipal, "Carrinhos sempre abertos")
+        self.assertNotContains(PaginaPrincipal, "<h1>Página Principal</h1>", html=True)
         self.assertContains(PaginaPrincipal, "Arroz 1 kg")
 
     def test_ConsultaDaPaginaPrincipalNaoExibeAcoesDeEdicao(self):
@@ -514,6 +668,99 @@ class TesteCarrinhosVenda(TestCase):
         self.assertNotIn("2", self.client.session.get("NomesCarrinhosVenda", {}))
         self.assertNotContains(self.client.get("/"), "Maria da Silva")
         self.assertContains(self.client.get("/dashboard"), "Maria da Silva")
+
+    def test_CompraPodeSerLancadaNaContinhaDoCliente(self):
+        self.client.post(
+            "/carrinho/nome",
+            {"carrinho": "1", "nome_cliente": "João da Padaria"},
+        )
+        self.AdicionarProduto("1", self.Arroz, "2")
+
+        Resposta = self.client.post(
+            "/carrinho/concluir",
+            {"carrinho": "1", "forma_pagamento": Venda.CONTA_CLIENTE},
+        )
+
+        self.assertEqual(Resposta.status_code, 302)
+        VendaConcluida = Venda.objects.get()
+        Conta = ContaCliente.objects.get(NomeCliente="João da Padaria")
+        Lancamento = LancamentoContaCliente.objects.get(Conta=Conta)
+        self.assertEqual(VendaConcluida.FormaPagamento, Venda.CONTA_CLIENTE)
+        self.assertEqual(VendaConcluida.ContaCliente, Conta)
+        self.assertEqual(Lancamento.Tipo, LancamentoContaCliente.COMPRA)
+        self.assertEqual(Lancamento.Valor, Decimal("20.00"))
+        self.Arroz.refresh_from_db()
+        self.assertEqual(self.Arroz.QuantidadeEstoque, Decimal("8.000"))
+
+        PaginaContinhas = self.client.get("/continhas")
+        self.assertContains(PaginaContinhas, "João da Padaria")
+        self.assertContains(PaginaContinhas, "R$ 20,00")
+        self.assertContains(PaginaContinhas, "Venda #")
+
+    def test_ContinhaExigeNomeDoClienteNoCarrinho(self):
+        self.AdicionarProduto("1", self.Arroz, "1")
+
+        Resposta = self.client.post(
+            "/carrinho/concluir",
+            {"carrinho": "1", "forma_pagamento": Venda.CONTA_CLIENTE},
+            follow=True,
+        )
+
+        self.assertFalse(Venda.objects.exists())
+        self.assertFalse(ContaCliente.objects.exists())
+        self.assertContains(
+            Resposta,
+            "Informe o nome do cliente para lançar na continha.",
+        )
+        self.assertIn("1", self.client.session["CarrinhosVenda"])
+
+    def test_PagamentoDaContinhaReduzSaldoDoCliente(self):
+        self.client.post(
+            "/carrinho/nome",
+            {"carrinho": "1", "nome_cliente": "Cliente Mensalista"},
+        )
+        self.AdicionarProduto("1", self.Arroz, "2")
+        self.client.post(
+            "/carrinho/concluir",
+            {"carrinho": "1", "forma_pagamento": Venda.CONTA_CLIENTE},
+        )
+        Conta = ContaCliente.objects.get(NomeCliente="Cliente Mensalista")
+
+        Resposta = self.client.post(
+            "/continhas/pagamento",
+            {
+                "conta": Conta.id,
+                "valor": "5,00",
+                "descricao": "parcial",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(
+            LancamentoContaCliente.objects.filter(
+                Conta=Conta,
+                Tipo=LancamentoContaCliente.PAGAMENTO,
+            ).count(),
+            1,
+        )
+        self.assertContains(Resposta, "R$ 15,00")
+
+    def test_PesquisaContinhasFiltraNomesParciaisERespeitaProprietario(self):
+        for Nome in ["Luiz Silva", "Luiz Carlos", "Maria Souza"]:
+            ContaCliente.objects.create(Proprietario=self.Usuario, NomeCliente=Nome)
+        OutroUsuario = ObterModeloUsuario().objects.create_user(username="outro_proprietario")
+        ContaCliente.objects.create(Proprietario=OutroUsuario, NomeCliente="Luiz Oliveira")
+
+        Resposta = self.client.get("/continhas", {"busca": "luiz"})
+
+        self.assertContains(Resposta, "Luiz Silva")
+        self.assertContains(Resposta, "Luiz Carlos")
+        self.assertNotContains(Resposta, "Maria Souza")
+        self.assertNotContains(Resposta, "Luiz Oliveira")
+        SemResultados = self.client.get("/continhas", {"busca": "cliente inexistente"})
+        self.assertContains(SemResultados, "Nenhuma continha encontrada")
+        SemFiltro = self.client.get("/continhas")
+        self.assertContains(SemFiltro, "Maria Souza")
 
     def test_CancelarCarrinhoTambemResetaONome(self):
         self.client.post(

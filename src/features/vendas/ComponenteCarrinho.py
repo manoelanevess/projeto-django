@@ -1,4 +1,5 @@
 """Componentes do fluxo de atendimento e carrinho de compras."""
+from decimal import Decimal
 from html import escape
 from urllib.parse import urlencode
 
@@ -21,6 +22,7 @@ from .LogicaCarrinho import (
     DefinirNomeCarrinho,
     LimparCarrinho,
     MontarResumosCarrinhos,
+    NumerosCarrinhos,
     RemoverProdutoDoCarrinho,
     ValidarNumeroCarrinho,
 )
@@ -68,19 +70,7 @@ def RedirecionarAposAcao(Request, NumeroCarrinho, Busca=""):
     if Request.POST.get("retorno") != "pagina-principal":
         return RedirecionarParaCarrinho(NumeroCarrinho, Busca)
 
-    CarrinhosAbertos = []
-
-    for NumeroInformado in Request.POST.get("carrinhos_abertos", "").split(","):
-        try:
-            NumeroValido = ValidarNumeroCarrinho(NumeroInformado)
-        except ValueError:
-            continue
-
-        if NumeroValido not in CarrinhosAbertos:
-            CarrinhosAbertos.append(NumeroValido)
-
-    if NumeroCarrinho not in CarrinhosAbertos:
-        CarrinhosAbertos.append(NumeroCarrinho)
+    CarrinhosAbertos = list(NumerosCarrinhos)
 
     Parametros = {
         "carrinho": NumeroCarrinho,
@@ -109,6 +99,48 @@ def RenderizarAbasCarrinhos(ResumosCarrinhos, NumeroSelecionado):
     )
 
 
+def MontarProdutosParaPesquisa(ProdutosEncontrados):
+    Produtos = []
+
+    for ProdutoVenda in ProdutosEncontrados:
+        LotesDisponiveis = ObterLotesDisponiveisProduto(ProdutoVenda)
+
+        if not LotesDisponiveis:
+            continue
+
+        LoteReferencia = LotesDisponiveis[0]
+        Unidade = ProdutoVenda.ObterUnidadeResumida()
+        QuantidadeDisponivel = sum(
+            (Lote.QuantidadeDisponivel or Decimal("0.000") for Lote in LotesDisponiveis),
+            Decimal("0.000"),
+        )
+        ControlaQuantidade = ProdutoVenda.ControlaQuantidadeEstoque()
+        Produtos.append(
+            {
+                "Id": ProdutoVenda.id,
+                "Nome": ProdutoVenda.Nome,
+                "Categoria": ProdutoVenda.Categoria or "Sem categoria",
+                "Marca": ProdutoVenda.Marca or "Sem marca",
+                "Fornecedor": ", ".join(dict.fromkeys(
+                    Lote.Fornecedor.Nome for Lote in LotesDisponiveis
+                )),
+                "Unidade": Unidade,
+                "Estoque": (
+                    f"{FormatarQuantidade(QuantidadeDisponivel)} {Unidade}"
+                    if ControlaQuantidade
+                    else LoteReferencia.ObterDescricaoEstoque()
+                ),
+                "Preco": FormatarValorMoeda(LoteReferencia.PrecoVenda),
+                "Passo": ProdutoVenda.ObterPassoVenda(),
+                "QuantidadeInicial": ProdutoVenda.ObterQuantidadeInicialVenda(),
+                "RotuloQuantidade": ProdutoVenda.ObterRotuloQuantidadeVenda(),
+                "EstoqueMaximo": format(QuantidadeDisponivel, "f") if ControlaQuantidade else "",
+            }
+        )
+
+    return Produtos
+
+
 def RenderizarResultadosBusca(ProdutosEncontrados, TokenCsrf, NumeroCarrinho, Busca):
     if not Busca:
         return """
@@ -118,7 +150,9 @@ def RenderizarResultadosBusca(ProdutosEncontrados, TokenCsrf, NumeroCarrinho, Bu
         </section>
         """
 
-    if not ProdutosEncontrados:
+    Produtos = MontarProdutosParaPesquisa(ProdutosEncontrados)
+
+    if not Produtos:
         return """
         <section class="EstadoBuscaVenda">
             <h2>Nenhum produto disponível</h2>
@@ -128,65 +162,41 @@ def RenderizarResultadosBusca(ProdutosEncontrados, TokenCsrf, NumeroCarrinho, Bu
 
     CartoesProdutos = []
 
-    for ProdutoVenda in ProdutosEncontrados:
-        NomeSeguro = escape(ProdutoVenda.Nome)
-        CategoriaSegura = escape(ProdutoVenda.Categoria or "Sem categoria")
-        MarcaSegura = escape(ProdutoVenda.Marca or "Sem marca")
-        Unidade = ProdutoVenda.ObterUnidadeResumida()
-        Passo = ProdutoVenda.ObterPassoVenda()
-        QuantidadeInicial = ProdutoVenda.ObterQuantidadeInicialVenda()
-        RotuloQuantidade = ProdutoVenda.ObterRotuloQuantidadeVenda()
-
-        for LoteVenda in ObterLotesDisponiveisProduto(ProdutoVenda):
-            NumeroLote = LoteVenda.ObterNumeroNoProduto()
-            FornecedorSeguro = escape(LoteVenda.Fornecedor.Nome)
-            Estoque = (
-                escape(LoteVenda.ObterDescricaoEstoque())
-                if ProdutoVenda.EhControladoPorDisponibilidade()
-                else f"{FormatarQuantidade(LoteVenda.QuantidadeDisponivel)} {Unidade}"
-            )
-            PrecoCusto = FormatarValorMoeda(LoteVenda.PrecoCusto)
-            PrecoVenda = FormatarValorMoeda(LoteVenda.PrecoVenda)
-            AtributoMaximo = (
-                f'max="{LoteVenda.QuantidadeDisponivel}"'
-                if ProdutoVenda.ControlaQuantidadeEstoque()
-                else ""
-            )
-
-            CartoesProdutos.append(
-                f"""
+    for Produto in Produtos:
+        AtributoMaximo = f'max="{Produto["EstoqueMaximo"]}"' if Produto["EstoqueMaximo"] else ""
+        CartoesProdutos.append(
+            f"""
                 <article class="ProdutoResultado">
                     <div class="DadosProdutoResultado">
                         <div class="LinhaNomeProduto">
-                            <strong>{NomeSeguro}</strong>
-                            <span class="MarcaProduto">{MarcaSegura}</span>
+                            <strong>{escape(Produto['Nome'])}</strong>
+                            <span class="MarcaProduto">{escape(Produto['Marca'])}</span>
                         </div>
-                        <span>{CategoriaSegura} · Lote #{NumeroLote}</span>
-                        <small>{FornecedorSeguro} · Custo R$ {PrecoCusto} · Venda R$ {PrecoVenda} / {Unidade} · Estoque: {Estoque}</small>
+                        <span>{escape(Produto['Categoria'])}</span>
+                        <small>{escape(Produto['Fornecedor'])} · Venda R$ {Produto['Preco']} / {Produto['Unidade']} · Estoque: {escape(Produto['Estoque'])}</small>
                     </div>
                     <form class="FormularioAdicionar" method="post" action="/carrinho/adicionar">
                         <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
                         <input type="hidden" name="carrinho" value="{NumeroCarrinho}">
-                        <input type="hidden" name="produto" value="{ProdutoVenda.id}">
-                        <input type="hidden" name="lote" value="{LoteVenda.id}">
+                        <input type="hidden" name="produto" value="{Produto['Id']}">
                         <input type="hidden" name="busca" value="{escape(Busca)}">
-                        <label for="Quantidade-{ProdutoVenda.id}-{LoteVenda.id}">{RotuloQuantidade}</label>
+                        <label for="Quantidade-{Produto['Id']}">{Produto['RotuloQuantidade']}</label>
                         <input
-                            id="Quantidade-{ProdutoVenda.id}-{LoteVenda.id}"
+                            id="Quantidade-{Produto['Id']}"
                             class="CampoQuantidade"
                             type="number"
                             name="quantidade"
-                            min="{Passo}"
+                            min="{Produto['Passo']}"
                             {AtributoMaximo}
-                            step="{Passo}"
-                            value="{QuantidadeInicial}"
+                            step="{Produto['Passo']}"
+                            value="{Produto['QuantidadeInicial']}"
                             required
                         >
                         <button class="BotaoPrimario" type="submit">Adicionar</button>
                     </form>
                 </article>
                 """
-            )
+        )
 
     return f'<section class="ListaResultadosVenda">{"".join(CartoesProdutos)}</section>'
 
@@ -194,43 +204,7 @@ def RenderizarResultadosBusca(ProdutosEncontrados, TokenCsrf, NumeroCarrinho, Bu
 def ComponentePesquisarProdutos(Request):
     Busca = Request.GET.get("busca", "").strip()
     ProdutosEncontrados = BuscarProdutosParaVenda(Busca)
-    Produtos = []
-
-    for ProdutoVenda in ProdutosEncontrados:
-        Unidade = ProdutoVenda.ObterUnidadeResumida()
-
-        for LoteVenda in ObterLotesDisponiveisProduto(ProdutoVenda):
-            Estoque = (
-                LoteVenda.ObterDescricaoEstoque()
-                if ProdutoVenda.EhControladoPorDisponibilidade()
-                else f"{FormatarQuantidade(LoteVenda.QuantidadeDisponivel)} {Unidade}"
-            )
-
-            Produtos.append(
-                {
-                    "Id": ProdutoVenda.id,
-                    "LoteId": LoteVenda.id,
-                    "NumeroLote": LoteVenda.ObterNumeroNoProduto(),
-                    "Nome": ProdutoVenda.Nome,
-                    "Categoria": ProdutoVenda.Categoria or "Sem categoria",
-                    "Marca": ProdutoVenda.Marca or "Sem marca",
-                    "Fornecedor": LoteVenda.Fornecedor.Nome,
-                    "Unidade": Unidade,
-                    "Estoque": Estoque,
-                    "PrecoCusto": FormatarValorMoeda(LoteVenda.PrecoCusto),
-                    "Preco": FormatarValorMoeda(LoteVenda.PrecoVenda),
-                    "Passo": ProdutoVenda.ObterPassoVenda(),
-                    "QuantidadeInicial": ProdutoVenda.ObterQuantidadeInicialVenda(),
-                    "RotuloQuantidade": ProdutoVenda.ObterRotuloQuantidadeVenda(),
-                    "EstoqueMaximo": (
-                        str(LoteVenda.QuantidadeDisponivel)
-                        if ProdutoVenda.ControlaQuantidadeEstoque()
-                        else ""
-                    ),
-                }
-            )
-
-    return JsonResponse({"Produtos": Produtos})
+    return JsonResponse({"Produtos": MontarProdutosParaPesquisa(ProdutosEncontrados)})
 
 
 def RenderizarItensCarrinho(ResumoCarrinho, TokenCsrf, NumeroCarrinho):
@@ -307,6 +281,10 @@ def RenderizarPagamento(ResumoCarrinho, TokenCsrf, NumeroCarrinho):
                 <label>
                     <input type="radio" name="forma_pagamento" value="pix">
                     PIX
+                </label>
+                <label>
+                    <input type="radio" name="forma_pagamento" value="conta_cliente">
+                    Conta do cliente
                 </label>
             </fieldset>
 
@@ -625,7 +603,7 @@ def ComponenteCarrinho(Request):
             margin: 0 0 16px;
             padding: 0;
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 8px;
             border: 0;
         }}
@@ -877,11 +855,11 @@ def ComponenteCarrinho(Request):
                     );
                     Dados.append(
                         LinhaNome,
-                        CriarElemento("span", "", `${{Produto.Categoria}} · Lote #${{Produto.NumeroLote}}`),
+                        CriarElemento("span", "", Produto.Categoria),
                         CriarElemento(
                             "small",
                             "",
-                            `${{Produto.Fornecedor}} · Custo R$ ${{Produto.PrecoCusto}} · Venda R$ ${{Produto.Preco}} / ${{Produto.Unidade}} · Estoque: ${{Produto.Estoque}}`,
+                            `${{Produto.Fornecedor}} · Venda R$ ${{Produto.Preco}} / ${{Produto.Unidade}} · Estoque: ${{Produto.Estoque}}`,
                         ),
                     );
 
@@ -891,10 +869,9 @@ def ComponenteCarrinho(Request):
                     CriarCampoOculto(FormularioProduto, "csrfmiddlewaretoken", "{TokenCsrf}");
                     CriarCampoOculto(FormularioProduto, "carrinho", "{NumeroCarrinho}");
                     CriarCampoOculto(FormularioProduto, "produto", Produto.Id);
-                    CriarCampoOculto(FormularioProduto, "lote", Produto.LoteId);
                     CriarCampoOculto(FormularioProduto, "busca", Busca);
 
-                    const IdentificadorQuantidade = `Quantidade-${{Produto.Id}}-${{Produto.LoteId}}`;
+                    const IdentificadorQuantidade = `Quantidade-${{Produto.Id}}`;
                     const Rotulo = CriarElemento("label", "", Produto.RotuloQuantidade);
                     Rotulo.htmlFor = IdentificadorQuantidade;
 
@@ -1040,7 +1017,6 @@ def ComponenteAdicionarItem(Request):
             NumeroCarrinho,
             Request.POST.get("produto"),
             Request.POST.get("quantidade"),
-            Request.POST.get("lote"),
         )
         DefinirMensagem(Request, f"{ProdutoVenda.Nome} adicionado ao carrinho {NumeroCarrinho}.")
     except ValueError as Erro:

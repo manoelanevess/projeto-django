@@ -56,9 +56,9 @@ def GerarResumoProdutos(Busca="", Estoque="", Categoria="", Fornecedor=""):
         LotesAtivos = getattr(Produto, "LotesAtivos", [])
         LotesDisponiveis = ObterLotesDisponiveisProduto(Produto)
         LoteReferencia = (
-            LotesDisponiveis[-1]
+            LotesDisponiveis[0]
             if LotesDisponiveis
-            else LotesAtivos[-1]
+            else LotesAtivos[0]
             if LotesAtivos
             else None
         )

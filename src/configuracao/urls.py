@@ -30,6 +30,11 @@ from features.vendas.ComponenteCarrinho import (
     ComponenteRemoverItem,
     ComponenteRenomearCarrinho,
 )
+from features.vendas.ComponenteContaCliente import (
+    ComponenteContinhasClientes,
+    ComponenteRegistrarPagamentoContaCliente,
+)
+from features.vendas.ComponenteHistoricoVenda import ComponenteHistoricoVendas
 
 
 ProtegerComponente = ExigirLogin(login_url="Login")
@@ -69,6 +74,21 @@ urlpatterns = [
         "carrinho/nome",
         ProtegerComponente(ComponenteRenomearCarrinho),
         name="RenomearCarrinho",
+    ),
+    path(
+        "vendas/historico",
+        ProtegerComponente(ComponenteHistoricoVendas),
+        name="HistoricoVendas",
+    ),
+    path(
+        "continhas",
+        ProtegerComponente(ComponenteContinhasClientes),
+        name="ContinhasClientes",
+    ),
+    path(
+        "continhas/pagamento",
+        ProtegerComponente(ComponenteRegistrarPagamentoContaCliente),
+        name="RegistrarPagamentoContaCliente",
     ),
     path(
         "produtos",
