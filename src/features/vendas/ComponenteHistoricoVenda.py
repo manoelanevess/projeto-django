@@ -1,15 +1,17 @@
 """Componentes da página de histórico de vendas."""
 from html import escape
 
-from django.db.models import Q
 from django.http import HttpResponse
 from django.utils import timezone
 
 from componentes.LayoutBase import RenderizarLayoutBase
+from componentes.BuscaIncremental import ObterScriptBuscaIncremental
 from features.produtos.LogicaProduto import FormatarQuantidade, FormatarValorMoeda
 
+from .ApiVenda import BuscarHistoricoVendas
+from .FormularioHistoricoVenda import FormularioHistoricoVenda, ParametrosFiltrosHistorico
 from .LogicaVenda import ConsolidarVendasDeMesesAnteriores
-from .models import RegistroVendaAntiga, Venda
+from .models import Venda
 
 
 RotulosPagamento = dict(Venda.OpcoesFormaPagamento)
@@ -23,34 +25,29 @@ def ObterUnidadeResumidaItem(UnidadeVenda):
     }.get(UnidadeVenda, "un")
 
 
-def BuscarVendasAtuais(Proprietario, Busca=""):
-    Vendas = Venda.objects.filter(Proprietario=Proprietario).prefetch_related("Itens")
+def RenderizarFiltrosHistorico(Formulario):
+    Campos = []
 
-    if Busca:
-        Filtro = Q(NomeCliente__icontains=Busca) | Q(Itens__NomeProduto__icontains=Busca)
+    for NomeCampo, Parametro in ParametrosFiltrosHistorico.items():
+        Campo = Formulario[NomeCampo]
+        IdCampo = f"FiltroVenda{NomeCampo}"
+        Atributos = {"id": IdCampo}
 
-        if Busca.isdigit():
-            Filtro |= Q(id=int(Busca))
+        if Campo.errors:
+            Atributos.update({"aria-invalid": "true", "aria-describedby": f"{IdCampo}Erro"})
 
-        Vendas = Vendas.filter(Filtro).distinct()
+        Entrada = Campo.field.widget.render(Parametro, Campo.value(), attrs=Atributos)
+        Erros = " ".join(str(Erro) for Erro in Campo.errors)
+        MensagemErro = f'<small class="ErroFiltroVenda" id="{IdCampo}Erro"{"" if Erros else " hidden"}>{escape(Erros)}</small>'
+        Campos.append(f"""
+            <div class="FiltroHistorico Filtro{NomeCampo}">
+                <label for="{IdCampo}">{escape(Campo.label)}</label>
+                {Entrada}
+                {MensagemErro}
+            </div>
+        """)
 
-    return Vendas.order_by("-CriadaEm")[:100]
-
-
-def BuscarRegistrosVendasAntigas(Proprietario, Busca=""):
-    Registros = RegistroVendaAntiga.objects.filter(
-        Proprietario=Proprietario
-    ).prefetch_related("Itens")
-
-    if Busca:
-        Filtro = Q(NomeCliente__icontains=Busca) | Q(Itens__NomeProduto__icontains=Busca)
-
-        if Busca.isdigit():
-            Filtro |= Q(VendaOriginalId=int(Busca))
-
-        Registros = Registros.filter(Filtro).distinct()
-
-    return Registros.order_by("-CriadaEm")[:100]
+    return "".join(Campos)
 
 
 def RenderizarItensHistorico(Itens):
@@ -74,7 +71,7 @@ def RenderizarItensHistorico(Itens):
     return f'<ul class="ListaItensHistorico">{"".join(Linhas)}</ul>'
 
 
-def RenderizarTabelaHistorico(VendasAtuais, RegistrosAntigos):
+def RenderizarTabelaHistorico(VendasAtuais, RegistrosAntigos, FiltrosAtivos=False):
     Linhas = []
 
     for VendaAtual in VendasAtuais:
@@ -134,11 +131,19 @@ def RenderizarTabelaHistorico(VendasAtuais, RegistrosAntigos):
         )
 
     if not Linhas:
-        return """
+        Mensagem = (
+            "Nenhuma venda corresponde aos filtros selecionados."
+            if FiltrosAtivos else "As vendas concluídas e arquivadas aparecerão aqui."
+        )
+        Acao = (
+            '<a class="BotaoSecundario" href="/vendas/historico">Limpar filtros</a>'
+            if FiltrosAtivos else '<a class="BotaoPrimario" href="/">Abrir atendimento</a>'
+        )
+        return f"""
         <section class="EstadoVazio">
             <h2>Nenhuma venda encontrada</h2>
-            <p>As vendas concluídas e arquivadas aparecerão aqui.</p>
-            <a class="BotaoPrimario" href="/">Abrir atendimento</a>
+            <p>{Mensagem}</p>
+            {Acao}
         </section>
         """
 
@@ -158,29 +163,27 @@ def RenderizarTabelaHistorico(VendasAtuais, RegistrosAntigos):
             <tbody>{''.join(Linhas)}</tbody>
         </table>
     </section>
-    <script>
-        (() => {{
-            document.querySelectorAll("[data-detalhe-venda]").forEach((LinhaVenda) => {{
-                LinhaVenda.addEventListener("click", () => {{
-                    const DetalhesVenda = document.getElementById(LinhaVenda.dataset.detalheVenda);
-                    const BotaoDetalhes = LinhaVenda.querySelector(".BotaoDetalhesVenda");
-                    const VaiAbrir = DetalhesVenda.hidden;
-                    DetalhesVenda.hidden = !VaiAbrir;
-                    BotaoDetalhes.setAttribute("aria-expanded", String(VaiAbrir));
-                    BotaoDetalhes.querySelector("span").textContent = VaiAbrir ? "-" : "+";
-                }});
-            }});
-        }})();
-    </script>
     """
 
 
 def ComponenteHistoricoVendas(Request):
     ConsolidarVendasDeMesesAnteriores()
-    Busca = Request.GET.get("busca", "").strip()
-    VendasAtuais = BuscarVendasAtuais(Request.user, Busca)
-    RegistrosAntigos = BuscarRegistrosVendasAntigas(Request.user, Busca)
-    TabelaHistorico = RenderizarTabelaHistorico(VendasAtuais, RegistrosAntigos)
+    Formulario = FormularioHistoricoVenda({
+        NomeCampo: Request.GET.get(Parametro, "").strip()
+        for NomeCampo, Parametro in ParametrosFiltrosHistorico.items()
+    })
+
+    if Formulario.is_valid():
+        VendasAtuais, RegistrosAntigos = BuscarHistoricoVendas(
+            Request.user, Formulario.cleaned_data
+        )
+        TabelaHistorico = RenderizarTabelaHistorico(
+            VendasAtuais, RegistrosAntigos, any(Formulario.cleaned_data.values())
+        )
+    else:
+        TabelaHistorico = '<p class="AvisoFiltrosVenda" role="status">Corrija os filtros para consultar as vendas.</p>'
+
+    CamposFiltros = RenderizarFiltrosHistorico(Formulario)
 
     ConteudoPrincipal = f"""
     <style>
@@ -192,7 +195,26 @@ def ComponenteHistoricoVendas(Request):
             gap: 16px;
         }}
         .CabecalhoHistorico h1 {{ margin: 0; }}
-        .TabelaHistoricoVendas {{ overflow-x: auto; }}
+        .BarraFiltrosHistorico {{
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) repeat(2, minmax(150px, 0.7fr));
+            align-items: start;
+            gap: 14px;
+        }}
+        .FiltroHistorico {{ display: grid; gap: 6px; min-width: 0; }}
+        .FiltroHistorico label {{ font-size: 13px; font-weight: 700; color: #43576a; }}
+        .FiltroBusca {{ grid-column: span 2; }}
+        .BarraFiltrosHistorico .CampoFormulario {{ width: 100%; min-width: 0; }}
+        .AcoesFiltrosHistorico {{
+            grid-column: span 2;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding-top: 21px;
+        }}
+        .ErroFiltroVenda {{ color: #b42318; line-height: 1.4; }}
+        .AvisoFiltrosVenda {{ color: #b42318; }}
+        .TabelaHistoricoVendas {{ overflow-x: auto; max-width: 100%; }}
         .TabelaHistoricoVendas table {{ min-width: 860px; }}
         .LinhaHistoricoVenda {{ cursor: pointer; }}
         .LinhaHistoricoVenda:hover td {{ background: #f4f9fc; }}
@@ -228,8 +250,16 @@ def ComponenteHistoricoVendas(Request):
         .ListaItensHistorico span,
         .TextoApoio {{ color: #667482; }}
         .ListaItensHistorico b {{ text-align: right; color: #26313d; }}
+        @media (max-width: 960px) {{
+            .BarraFiltrosHistorico {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+            .AcoesFiltrosHistorico {{ padding-top: 0; }}
+        }}
         @media (max-width: 760px) {{
             .CabecalhoHistorico {{ align-items: stretch; flex-direction: column; }}
+        }}
+        @media (max-width: 420px) {{
+            .BarraFiltrosHistorico {{ grid-template-columns: minmax(0, 1fr); }}
+            .FiltroBusca, .AcoesFiltrosHistorico {{ grid-column: auto; }}
         }}
     </style>
 
@@ -238,25 +268,56 @@ def ComponenteHistoricoVendas(Request):
         <a class="BotaoSecundario" href="/">Abrir atendimento</a>
     </div>
 
-    <form class="BarraFiltros" method="get" action="/vendas/historico">
-        <input
-            class="CampoFormulario"
-            type="search"
-            name="busca"
-            value="{escape(Busca)}"
-            placeholder="Cliente, produto ou número da venda"
-            aria-label="Pesquisar no histórico de vendas"
-        >
-        <button class="BotaoPrimario" type="submit">Pesquisar</button>
+    <form class="BarraFiltros BarraFiltrosHistorico" id="FormularioBuscaVendas" method="get" action="/vendas/historico">
+        {CamposFiltros}
+        <div class="AcoesFiltrosHistorico">
+            <button class="BotaoPrimario" type="submit">Filtrar</button>
+            <a class="BotaoSecundario" href="/vendas/historico">Limpar filtros</a>
+        </div>
     </form>
 
-    {TabelaHistorico}
+    <p id="ErroBuscaVendas" class="AvisoFiltrosVenda" role="status" hidden>Não foi possível pesquisar agora. Tente novamente.</p>
+    <div id="ResultadosVendas" aria-live="polite">
+        {TabelaHistorico}
+    </div>
+    <script>
+        (() => {{
+            const Formulario = document.getElementById("FormularioBuscaVendas");
+            document.getElementById("ResultadosVendas").addEventListener("click", (Evento) => {{
+                const LinhaVenda = Evento.target.closest("[data-detalhe-venda]");
+                if (!LinhaVenda) return;
+                const DetalhesVenda = document.getElementById(LinhaVenda.dataset.detalheVenda);
+                const BotaoDetalhes = LinhaVenda.querySelector(".BotaoDetalhesVenda");
+                const VaiAbrir = DetalhesVenda.hidden;
+                DetalhesVenda.hidden = !VaiAbrir;
+                BotaoDetalhes.setAttribute("aria-expanded", String(VaiAbrir));
+                BotaoDetalhes.querySelector("span").textContent = VaiAbrir ? "-" : "+";
+            }});
+            Formulario.addEventListener("busca-incremental-atualizada", (Evento) => {{
+                const Documento = Evento.detail.Documento;
+                Formulario.querySelectorAll("input, select").forEach((Campo) => {{
+                    const NovoCampo = Documento.getElementById(Campo.id);
+                    const Erro = document.getElementById(`${{Campo.id}}Erro`);
+                    const NovoErro = Documento.getElementById(`${{Campo.id}}Erro`);
+                    if (!NovoCampo || !Erro || !NovoErro) return;
+                    Erro.textContent = NovoErro.textContent;
+                    Erro.hidden = NovoErro.hidden;
+                    ["aria-invalid", "aria-describedby"].forEach((Atributo) => {{
+                        if (NovoCampo.hasAttribute(Atributo)) Campo.setAttribute(Atributo, NovoCampo.getAttribute(Atributo));
+                        else Campo.removeAttribute(Atributo);
+                    }});
+                }});
+            }});
+        }})();
+    </script>
     """
 
     return HttpResponse(
         RenderizarLayoutBase(
             "Histórico de vendas",
-            ConteudoPrincipal,
+            ConteudoPrincipal + ObterScriptBuscaIncremental(
+                "FormularioBuscaVendas", "FiltroVendaBusca", "ResultadosVendas", "ErroBuscaVendas",
+            ),
             RotaAtiva="historico-vendas",
         )
     )

@@ -19,7 +19,27 @@ def NormalizarNomeProduto(Nome):
     return NomeLimpo[0].upper() + NomeLimpo[1:]
 
 
+def CriarCampoDataValidade():
+    return forms.DateField(
+        label="Data de validade", required=False, input_formats=["%Y-%m-%d"],
+        widget=forms.DateInput(format="%Y-%m-%d", attrs={
+            "type": "date", "class": "CampoFormulario",
+        }),
+        error_messages={"invalid": "Informe uma data de validade válida."},
+    )
+
+
+class FormularioValidadeLote(forms.ModelForm):
+    DataValidade = CriarCampoDataValidade()
+
+    class Meta:
+        model = LoteEstoque
+        fields = ["DataValidade"]
+
+
 class FormularioProduto(forms.ModelForm):
+    DataValidade = CriarCampoDataValidade()
+
     class Meta:
         model = Produto
         fields = [
@@ -27,6 +47,7 @@ class FormularioProduto(forms.ModelForm):
             "Categoria",
             "Marca",
             "Fornecedor",
+            "CodigoBarras",
             "UnidadeVenda",
             "PrecoCusto",
             "PrecoVenda",
@@ -41,6 +62,9 @@ class FormularioProduto(forms.ModelForm):
             "Categoria": forms.TextInput(attrs={"class": "CampoFormulario"}),
             "Marca": forms.TextInput(attrs={"class": "CampoFormulario"}),
             "Fornecedor": forms.Select(attrs={"class": "CampoFormulario"}),
+            "CodigoBarras": forms.TextInput(
+                attrs={"class": "CampoFormulario", "autocomplete": "off", "spellcheck": "false"}
+            ),
             "UnidadeVenda": forms.Select(attrs={"class": "CampoFormulario"}),
             "PrecoCusto": forms.NumberInput(
                 attrs={"class": "CampoFormulario", "min": "0", "step": "0.01"}
@@ -59,6 +83,10 @@ class FormularioProduto(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if not self.is_bound and not self.initial.get("CodigoBarras"):
+            self.fields["Nome"].widget.attrs.pop("autofocus", None)
+            self.fields["CodigoBarras"].widget.attrs["autofocus"] = True
+
         self.fields["Categoria"].required = True
         self.fields["Fornecedor"].required = True
         self.fields["Fornecedor"].empty_label = "Selecione um fornecedor"
@@ -138,11 +166,21 @@ class FormularioProduto(forms.ModelForm):
         return DadosLimpos
 
 
+    @transaction.atomic
+    def CriarProduto(self):
+        ProdutoCriado = self.save()
+        LoteInicial = ProdutoCriado.LotesEstoque.get(Numero=1)
+        LoteInicial.DataValidade = self.cleaned_data["DataValidade"]
+        LoteInicial.save(update_fields=["DataValidade"])
+        return ProdutoCriado
+
+
 class FormularioEdicaoProduto(forms.ModelForm):
     class Meta:
         model = Produto
         fields = [
             "Nome",
+            "CodigoBarras",
             "Categoria",
             "Marca",
             "UnidadeVenda",
@@ -157,6 +195,9 @@ class FormularioEdicaoProduto(forms.ModelForm):
             "UnidadeVenda": forms.Select(attrs={"class": "CampoFormulario"}),
             "EstoqueMinimo": forms.NumberInput(
                 attrs={"class": "CampoFormulario", "min": "0", "step": "0.001"}
+            ),
+            "CodigoBarras": forms.TextInput(
+                attrs={"class": "CampoFormulario", "autocomplete": "off", "spellcheck": "false"}
             ),
         }
 
@@ -213,6 +254,8 @@ class FormularioEdicaoProduto(forms.ModelForm):
 
 
 class FormularioLoteEstoque(forms.Form):
+    DataValidade = CriarCampoDataValidade()
+
     Fornecedor = forms.ModelChoiceField(
         queryset=Fornecedor.objects.none(),
         empty_label="Selecione um fornecedor",
@@ -291,6 +334,7 @@ class FormularioLoteEstoque(forms.Form):
             QuantidadeDisponivel=Quantidade,
             PrecoCusto=self.cleaned_data["PrecoCusto"],
             PrecoVenda=self.cleaned_data["PrecoVenda"],
+            DataValidade=self.cleaned_data["DataValidade"],
             Disponivel=(
                 self.cleaned_data["Disponivel"]
                 if self.ProdutoVenda.EhControladoPorDisponibilidade()

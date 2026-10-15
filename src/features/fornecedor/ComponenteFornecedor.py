@@ -7,6 +7,7 @@ from django.shortcuts import get_object_or_404, redirect
 from django.views.decorators.http import require_POST as ExigirPost
 
 from componentes.LayoutBase import RenderizarLayoutBase
+from componentes.BuscaIncremental import ObterScriptBuscaIncremental
 
 from .ApiFornecedor import BuscarFornecedores
 from .FormularioFornecedor import FormularioFornecedor
@@ -48,7 +49,7 @@ def RenderizarCampo(Formulario, NomeCampo, Rotulo, Descricao=""):
 
 def ComponenteFornecedores(Request):
     Busca = Request.GET.get("busca", "").strip()
-    Fornecedores = list(BuscarFornecedores(Busca))
+    Fornecedores = list(BuscarFornecedores(Busca, BuscaPorInicio=Request.GET.get("inicio") == "1"))
     TokenCsrf = ObterTokenCsrf(Request)
     Mensagem = ConsumirMensagemFornecedor(Request)
     MensagemHtml = ""
@@ -109,7 +110,7 @@ def ComponenteFornecedores(Request):
             )
 
         ResultadoFornecedores = f"""
-        <section class="PainelTabela" aria-label="Fornecedores cadastrados">
+        <section class="PainelTabela TabelaFornecedores" aria-label="Fornecedores cadastrados">
             <table>
                 <thead>
                     <tr>
@@ -144,6 +145,10 @@ def ComponenteFornecedores(Request):
             gap: 16px;
         }}
         .CabecalhoFornecedores h1 {{ margin: 0; }}
+        .TabelaFornecedores {{ overflow-x: auto; position: relative; }}
+        @media (max-width: 620px) {{
+            .CabecalhoFornecedores {{ flex-direction: column; align-items: stretch; }}
+        }}
         .MensagemOperacao {{
             margin-bottom: 18px;
             padding: 12px 14px;
@@ -188,26 +193,32 @@ def ComponenteFornecedores(Request):
 
     {MensagemHtml}
 
-    <form class="BarraFiltros" method="get" action="/fornecedores">
+    <form class="BarraFiltros" id="FormularioBuscaFornecedores" method="get" action="/fornecedores">
+        <input type="hidden" name="inicio" value="1">
         <input
+            id="BuscaFornecedor"
             class="CampoFormulario"
             type="search"
             name="busca"
             value="{escape(Busca)}"
-            placeholder="Nome, contato ou cidade"
+            placeholder="Nome do fornecedor"
             aria-label="Pesquisar fornecedor"
+            autocomplete="off"
         >
         <button class="BotaoPrimario" type="submit">Pesquisar</button>
         <a class="BotaoSecundario" href="/fornecedores">Limpar</a>
     </form>
 
-    {ResultadoFornecedores}
+    <p class="MensagemOperacao Erro" id="ErroBuscaFornecedores" role="status" hidden>Não foi possível pesquisar agora. Tente novamente.</p>
+    <div id="ResultadosFornecedores" aria-live="polite">{ResultadoFornecedores}</div>
     """
 
     return HttpResponse(
         RenderizarLayoutBase(
             "Fornecedores",
-            ConteudoPrincipal,
+            ConteudoPrincipal + ObterScriptBuscaIncremental(
+                "FormularioBuscaFornecedores", "BuscaFornecedor", "ResultadosFornecedores", "ErroBuscaFornecedores",
+            ),
             RotaAtiva="fornecedores",
         )
     )

@@ -8,6 +8,7 @@ from .models import LoteEstoque, Produto
 class ProdutoAdmin(admin.ModelAdmin):
     list_display = (
         "Nome",
+        "CodigoBarras",
         "Categoria",
         "Marca",
         "Fornecedor",
@@ -19,7 +20,7 @@ class ProdutoAdmin(admin.ModelAdmin):
         "Ativo",
     )
     list_filter = ("UnidadeVenda", "Disponivel", "Ativo", "Categoria")
-    search_fields = ("Nome", "Categoria", "Marca", "Fornecedor__Nome")
+    search_fields = ("Nome", "CodigoBarras", "Categoria", "Marca", "Fornecedor__Nome")
 
 
 @admin.register(LoteEstoque)
@@ -33,6 +34,7 @@ class LoteEstoqueAdmin(admin.ModelAdmin):
         "Disponivel",
         "Ativo",
         "CriadoEm",
+        "DataValidade",
     )
-    list_filter = ("Disponivel", "Ativo", "Fornecedor")
+    list_filter = ("Disponivel", "Ativo", "Fornecedor", "DataValidade")
     search_fields = ("Produto__Nome", "Produto__Marca", "Fornecedor__Nome")

@@ -11,7 +11,8 @@ from .models import ContaCliente, ItemVenda, LancamentoContaCliente, Venda
 
 ChaveSessaoCarrinhos = "CarrinhosVenda"
 ChaveSessaoNomesCarrinhos = "NomesCarrinhosVenda"
-NumerosCarrinhos = ("1", "2", "3")
+ChaveSessaoNumerosCarrinhos = "NumerosCarrinhosVenda"
+NumerosCarrinhosIniciais = ("1", "2", "3")
 Centavo = Decimal("0.01")
 PrecisaoQuantidade = Decimal("0.001")
 PrefixoChaveLote = "Lote:"
@@ -20,13 +21,16 @@ PrefixoChaveLote = "Lote:"
 def ConverterQuantidade(Valor):
     try:
         Quantidade = Decimal(str(Valor).strip().replace(",", "."))
+        if not Quantidade.is_finite() or Quantidade > Decimal("999999999.999"):
+            raise ValueError
+        Quantidade = Quantidade.quantize(PrecisaoQuantidade, rounding=ROUND_HALF_UP)
     except (InvalidOperation, TypeError, ValueError):
         raise ValueError("Informe uma quantidade válida.") from None
 
     if Quantidade <= 0:
         raise ValueError("A quantidade deve ser maior que zero.")
 
-    return Quantidade.quantize(PrecisaoQuantidade, rounding=ROUND_HALF_UP)
+    return Quantidade
 
 
 def ValidarQuantidadeProduto(ProdutoVenda, Quantidade, LoteVenda=None):
@@ -93,13 +97,56 @@ def BuscarLotePadraoProduto(ProdutoId):
     return LotesDisponiveis[0]
 
 
-def ValidarNumeroCarrinho(NumeroCarrinho):
+def ValidarNumeroCarrinho(NumeroCarrinho, Request=None):
     NumeroNormalizado = str(NumeroCarrinho or "1")
 
-    if NumeroNormalizado not in NumerosCarrinhos:
+    if (
+        not NumeroNormalizado.isascii()
+        or not NumeroNormalizado.isdecimal()
+        or NumeroNormalizado.startswith("0")
+        or (Request is not None and NumeroNormalizado not in ObterNumerosCarrinhos(Request))
+    ):
         raise ValueError("Selecione um carrinho válido.")
 
     return NumeroNormalizado
+
+
+def ObterNumerosCarrinhos(Request):
+    Numeros = set()
+    Registrados = Request.session.get(ChaveSessaoNumerosCarrinhos)
+    if isinstance(Registrados, list):
+        Origem = Registrados
+    else:
+        # Preserva atendimentos de sessoes anteriores sem reabrir os ja fechados.
+        Origem = list(NumerosCarrinhosIniciais)
+        for Chave in (ChaveSessaoCarrinhos, ChaveSessaoNomesCarrinhos):
+            Dados = Request.session.get(Chave, {})
+            if isinstance(Dados, dict):
+                Origem.extend(Dados)
+    for Numero in Origem:
+        if not isinstance(Numero, str) or not Numero:
+            continue
+        try:
+            Numeros.add(ValidarNumeroCarrinho(Numero))
+        except ValueError:
+            continue
+    return sorted(Numeros, key=lambda Numero: (len(Numero), Numero))
+
+
+def CriarCarrinhoSessao(Request):
+    Numeros = ObterNumerosCarrinhos(Request)
+    NovoNumero = str(int(Numeros[-1]) + 1) if Numeros else "1"
+    Request.session[ChaveSessaoNumerosCarrinhos] = [*Numeros, NovoNumero]
+    Request.session.modified = True
+    return NovoNumero
+
+
+def FecharCarrinhoSessao(Request, NumeroCarrinho):
+    Numero = ValidarNumeroCarrinho(NumeroCarrinho, Request)
+    Numeros = ObterNumerosCarrinhos(Request)
+    LimparCarrinho(Request, Numero)
+    Request.session[ChaveSessaoNumerosCarrinhos] = [Valor for Valor in Numeros if Valor != Numero]
+    Request.session.modified = True
 
 
 def ObterNomesCarrinhosSessao(Request):
@@ -112,18 +159,18 @@ def ObterNomesCarrinhosSessao(Request):
 
 
 def ObterNomePersonalizadoCarrinho(Request, NumeroCarrinho):
-    Numero = ValidarNumeroCarrinho(NumeroCarrinho)
+    Numero = ValidarNumeroCarrinho(NumeroCarrinho, Request)
     Nome = ObterNomesCarrinhosSessao(Request).get(Numero, "")
     return str(Nome).strip()
 
 
 def ObterNomeExibicaoCarrinho(Request, NumeroCarrinho):
-    Numero = ValidarNumeroCarrinho(NumeroCarrinho)
+    Numero = ValidarNumeroCarrinho(NumeroCarrinho, Request)
     return ObterNomePersonalizadoCarrinho(Request, Numero) or f"Carrinho {Numero}"
 
 
 def DefinirNomeCarrinho(Request, NumeroCarrinho, NomeInformado):
-    Numero = ValidarNumeroCarrinho(NumeroCarrinho)
+    Numero = ValidarNumeroCarrinho(NumeroCarrinho, Request)
     Nome = " ".join(str(NomeInformado or "").split())
 
     if len(Nome) > 80:
@@ -142,7 +189,7 @@ def DefinirNomeCarrinho(Request, NumeroCarrinho, NomeInformado):
 
 
 def LimparNomeCarrinho(Request, NumeroCarrinho):
-    Numero = ValidarNumeroCarrinho(NumeroCarrinho)
+    Numero = ValidarNumeroCarrinho(NumeroCarrinho, Request)
     NomesCarrinhos = ObterNomesCarrinhosSessao(Request)
     NomesCarrinhos.pop(Numero, None)
     Request.session[ChaveSessaoNomesCarrinhos] = NomesCarrinhos
@@ -159,7 +206,7 @@ def ObterCarrinhosSessao(Request):
 
 
 def ObterCarrinhoSessao(Request, NumeroCarrinho="1"):
-    Numero = ValidarNumeroCarrinho(NumeroCarrinho)
+    Numero = ValidarNumeroCarrinho(NumeroCarrinho, Request)
     Carrinhos = ObterCarrinhosSessao(Request)
     Carrinho = Carrinhos.get(Numero, {})
 
@@ -200,7 +247,7 @@ def ObterCarrinhoSessao(Request, NumeroCarrinho="1"):
 
 
 def SalvarCarrinhoSessao(Request, NumeroCarrinho, Carrinho):
-    Numero = ValidarNumeroCarrinho(NumeroCarrinho)
+    Numero = ValidarNumeroCarrinho(NumeroCarrinho, Request)
     Carrinhos = ObterCarrinhosSessao(Request)
     Carrinhos[Numero] = Carrinho
     Request.session[ChaveSessaoCarrinhos] = Carrinhos
@@ -213,7 +260,7 @@ def AdicionarProdutoAoCarrinho(
     ProdutoId,
     ValorQuantidade,
 ):
-    Numero = ValidarNumeroCarrinho(NumeroCarrinho)
+    Numero = ValidarNumeroCarrinho(NumeroCarrinho, Request)
 
     try:
         ProdutoVenda = Produto.objects.get(pk=ProdutoId, Ativo=True)
@@ -276,14 +323,14 @@ def AdicionarProdutoAoCarrinho(
 
 
 def RemoverProdutoDoCarrinho(Request, NumeroCarrinho, ChaveItem):
-    Numero = ValidarNumeroCarrinho(NumeroCarrinho)
+    Numero = ValidarNumeroCarrinho(NumeroCarrinho, Request)
     Carrinho = ObterCarrinhoSessao(Request, Numero)
     Carrinho.pop(str(ChaveItem), None)
     SalvarCarrinhoSessao(Request, Numero, Carrinho)
 
 
 def LimparCarrinho(Request, NumeroCarrinho):
-    Numero = ValidarNumeroCarrinho(NumeroCarrinho)
+    Numero = ValidarNumeroCarrinho(NumeroCarrinho, Request)
     Carrinhos = ObterCarrinhosSessao(Request)
     Carrinhos.pop(Numero, None)
     Request.session[ChaveSessaoCarrinhos] = Carrinhos
@@ -292,7 +339,7 @@ def LimparCarrinho(Request, NumeroCarrinho):
 
 
 def MontarResumoCarrinho(Request, NumeroCarrinho="1"):
-    Numero = ValidarNumeroCarrinho(NumeroCarrinho)
+    Numero = ValidarNumeroCarrinho(NumeroCarrinho, Request)
     Carrinho = ObterCarrinhoSessao(Request, Numero)
     IdentificadoresLotes = [
         LoteId
@@ -360,7 +407,7 @@ def MontarResumoCarrinho(Request, NumeroCarrinho="1"):
 def MontarResumosCarrinhos(Request):
     return [
         MontarResumoCarrinho(Request, NumeroCarrinho)
-        for NumeroCarrinho in NumerosCarrinhos
+        for NumeroCarrinho in ObterNumerosCarrinhos(Request)
     ]
 
 
@@ -382,7 +429,7 @@ def ConcluirVenda(
     FormaPagamento,
     ValorRecebidoInformado="",
 ):
-    Numero = ValidarNumeroCarrinho(NumeroCarrinho)
+    Numero = ValidarNumeroCarrinho(NumeroCarrinho, Request)
     Carrinho = ObterCarrinhoSessao(Request, Numero)
     NomeCliente = ObterNomePersonalizadoCarrinho(Request, Numero)
 

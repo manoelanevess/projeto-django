@@ -7,6 +7,8 @@ from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
+from .LogicaCodigoBarras import NormalizarCodigoBarras
+
 
 class Produto(models.Model):
     UNIDADE = "unidade"
@@ -22,6 +24,13 @@ class Produto(models.Model):
     ]
 
     Nome = models.CharField(max_length=120, unique=True)
+    CodigoBarras = models.CharField(
+        max_length=64,
+        unique=True,
+        null=True,
+        blank=True,
+        error_messages={"unique": "Este código de barras já está cadastrado em outro produto."},
+    )
     Categoria = models.CharField(max_length=80, blank=True)
     Marca = models.CharField(max_length=80, blank=True)
     Fornecedor = models.ForeignKey(
@@ -74,6 +83,7 @@ class Produto(models.Model):
 
     def save(self, *args, **kwargs):
         NomeLimpo = " ".join(str(self.Nome).split())
+        self.CodigoBarras = NormalizarCodigoBarras(self.CodigoBarras)
 
         if NomeLimpo:
             self.Nome = NomeLimpo[0].upper() + NomeLimpo[1:]
@@ -82,6 +92,11 @@ class Produto(models.Model):
 
     def clean(self):
         super().clean()
+
+        try:
+            self.CodigoBarras = NormalizarCodigoBarras(self.CodigoBarras)
+        except ValueError as Erro:
+            raise ValidationError({"CodigoBarras": str(Erro)}) from None
 
         if self.EhControladoPorDisponibilidade():
             self.QuantidadeEstoque = None
@@ -249,6 +264,7 @@ class LoteEstoque(models.Model):
     Disponivel = models.BooleanField(default=True)
     Ativo = models.BooleanField(default=True)
     CriadoEm = models.DateTimeField(auto_now_add=True)
+    DataValidade = models.DateField("data de validade", null=True, blank=True)
 
     class Meta:
         ordering = ["CriadoEm", "id"]

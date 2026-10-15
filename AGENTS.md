@@ -33,7 +33,7 @@ Roteamento: MPA com `path()` no arquivo `src/configuracao/urls.py`.
 - Não instalar biblioteca nova sem perguntar antes.
 - Não criar componentes compartilhados se eles forem usados por apenas uma feature.
 - Não importar uma feature dentro de outra sem motivo claro; Página Principal, estoque e relatórios podem consumir funções públicas de outras features para montar indicadores.
-- Manter três carrinhos independentes na sessão e reduzir o estoque quantitativo apenas ao concluir a venda.
+- Iniciar com três carrinhos independentes na sessão e permitir abrir mais pelo botão +, sem limite fixo. Reduzir o estoque quantitativo apenas ao concluir a venda.
 - Produtos vendidos por quilograma usam disponibilidade, sem quantidade exata nem baixa numérica no estoque.
 - Produtos devem selecionar um fornecedor ativo já cadastrado; fornecedores são inativados, não apagados fisicamente.
 - Produtos possuem preço de custo e de venda; carrinhos mostram somente a venda, e tabelas administrativas mostram ambos.
