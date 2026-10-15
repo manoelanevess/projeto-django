@@ -1,20 +1,25 @@
 """Componentes de cadastro e manutenção de produtos."""
 from datetime import date
 from html import escape
+from urllib.parse import urlencode
 
-from django.db import transaction
 from django.http import HttpResponse
 from django.middleware.csrf import get_token as ObterTokenCsrf
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views.decorators.http import require_POST as ExigirPost
+from django.views.decorators.http import require_GET as ExigirGet
 
 from componentes.LayoutBase import RenderizarLayoutBase
 
+from .ApiProduto import BuscarProdutoPorCodigoBarras
+from .ComponenteCatalogoProduto import ObterScriptConsultaCatalogoProduto
+from .LogicaCodigoBarras import EhCodigoGtin, NormalizarCodigoBarras
 from .FormularioProduto import (
     FormularioEdicaoProduto,
     FormularioLoteEstoque,
     FormularioProduto,
+    FormularioValidadeLote,
 )
 from .LogicaProduto import FormatarQuantidade, FormatarValorMoeda
 from .models import LoteEstoque, Produto
@@ -33,6 +38,64 @@ def ConsumirMensagemProduto(Request):
 
 def ComponenteRedirecionarProdutos(Request):
     return redirect("Estoque")
+
+
+def RedirecionarPesquisaEstoque(Request):
+    Parametros = {"busca": Request.GET.get("codigo", "").strip()}
+
+    for NomeFiltro in ("categoria", "fornecedor", "estoque", "inicio"):
+        ValorFiltro = Request.GET.get(NomeFiltro, "").strip()
+        if ValorFiltro:
+            Parametros[NomeFiltro] = ValorFiltro
+
+    return redirect(f"/estoque?{urlencode(Parametros)}")
+
+
+@ExigirGet
+def ComponenteLerCodigoEstoque(Request):
+    PermitirPesquisa = Request.GET.get("permitir_pesquisa") == "1"
+
+    try:
+        Codigo = NormalizarCodigoBarras(Request.GET.get("codigo"), Obrigatorio=True)
+        ProdutoEncontrado = BuscarProdutoPorCodigoBarras(Codigo)
+    except ValueError as Erro:
+        if PermitirPesquisa and "\x00" not in Request.GET.get("codigo", ""):
+            return RedirecionarPesquisaEstoque(Request)
+        DefinirMensagemProduto(Request, str(Erro), Tipo="erro")
+        return redirect("Estoque")
+
+    if ProdutoEncontrado is None:
+        if PermitirPesquisa and not EhCodigoGtin(Codigo):
+            return RedirecionarPesquisaEstoque(Request)
+        return redirect(f"/estoque/novo?{urlencode({'codigo': Codigo})}")
+
+    if not ProdutoEncontrado.Ativo:
+        DefinirMensagemProduto(Request, "Este código pertence a um produto inativo.", Tipo="erro")
+        return redirect("Estoque")
+
+    return redirect(f"/estoque/{ProdutoEncontrado.id}/editar?entrada=1#NovaEntradaEstoque")
+
+
+def ObterScriptCodigoProduto():
+    return """
+    <script>
+        (() => {
+            const CampoCodigo = document.getElementById("id_CodigoBarras");
+            CampoCodigo.addEventListener("keydown", (Evento) => {
+                if (Evento.key !== "Enter" || Evento.isComposing) return;
+                Evento.preventDefault();
+                document.getElementById("id_Nome").focus();
+            });
+            if (new URLSearchParams(window.location.search).get("entrada") === "1") {
+                const CampoEntrada = document.getElementById("id_Lote-QuantidadeEntrada")
+                    || document.getElementById("id_Lote-Fornecedor");
+                if (CampoEntrada) {
+                    window.addEventListener("load", () => CampoEntrada.focus({ preventScroll: true }), { once: true });
+                }
+            }
+        })();
+    </script>
+    """
 
 
 def RenderizarErrosCampo(Formulario, NomeCampo):
@@ -74,6 +137,10 @@ def RenderizarLotesProduto(ProdutoEdicao, TokenCsrf):
     for Lote in Lotes:
         NumeroLote = Lote.ObterNumeroNoProduto()
         DataEntrada = timezone.localtime(Lote.CriadoEm).date()
+        IdValidade = f"ValidadeLote-{Lote.id}"
+        CampoValidade = FormularioValidadeLote(instance=Lote)["DataValidade"].as_widget(
+            attrs={"id": IdValidade, "class": "CampoDataLote"}
+        )
 
         if ProdutoEdicao.EhControladoPorDisponibilidade():
             Saldo = "Disponível" if Lote.Disponivel else "Indisponível"
@@ -130,6 +197,14 @@ def RenderizarLotesProduto(ProdutoEdicao, TokenCsrf):
                         <button class="BotaoSalvarDataLote" type="submit">Salvar</button>
                     </form>
                 </td>
+                <td>
+                    <form class="FormularioDataLote" method="post" action="/estoque/{ProdutoEdicao.id}/lotes/{Lote.id}/validade">
+                        <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
+                        <label class="SomenteLeitorTela" for="{IdValidade}">Data de validade do lote #{NumeroLote}</label>
+                        {CampoValidade}
+                        <button class="BotaoSalvarDataLote" type="submit" aria-label="Salvar validade do lote #{NumeroLote}">Salvar</button>
+                    </form>
+                </td>
                 <td>{escape(Lote.Fornecedor.Nome)}</td>
                 <td>R$ {FormatarValorMoeda(Lote.PrecoCusto)}</td>
                 <td>R$ {FormatarValorMoeda(Lote.PrecoVenda)}</td>
@@ -147,6 +222,7 @@ def RenderizarLotesProduto(ProdutoEdicao, TokenCsrf):
                 <tr>
                     <th>Lote</th>
                     <th>Data de entrada</th>
+                    <th>Data de validade</th>
                     <th>Fornecedor</th>
                     <th>Preço de custo</th>
                     <th>Preço de venda</th>
@@ -271,7 +347,7 @@ def ComponenteEditarProdutoComLotes(Request, ProdutoEdicao):
             font-size: 13px;
             font-weight: 700;
         }}
-        .GrupoCampo .CampoFormulario {{ width: 100%; }}
+        .GrupoCampo .CampoFormulario {{ width: 100%; min-width: 0; }}
         .GrupoCampoLargo {{ grid-column: 1 / -1; }}
         .AjudaCampo {{ display: block; margin-top: 6px; color: #667482; line-height: 1.35; }}
         .ErroCampo {{ display: block; margin-top: 6px; color: #a12c25; font-size: 13px; }}
@@ -295,8 +371,8 @@ def ComponenteEditarProdutoComLotes(Request, ProdutoEdicao):
         }}
         .ControleDisponibilidade label {{ margin: 0; cursor: pointer; }}
         .CampoCheckbox {{ width: 18px; height: 18px; accent-color: #0784ca; }}
-        .TabelaLotes {{ margin-bottom: 22px; overflow-x: auto; }}
-        .TabelaLotes table {{ min-width: 820px; box-shadow: none; }}
+        .TabelaLotes {{ margin-bottom: 22px; overflow-x: auto; position: relative; }}
+        .TabelaLotes table {{ min-width: 1100px; box-shadow: none; }}
         .TabelaLotes td strong,
         .TabelaLotes td small {{ display: block; }}
         .TabelaLotes td small {{ margin-top: 3px; color: #667482; }}
@@ -366,6 +442,11 @@ def ComponenteEditarProdutoComLotes(Request, ProdutoEdicao):
         .MensagemOperacao.Sucesso {{ border-color: #14866d; color: #0c614f; background: #e7f7f2; }}
         .MensagemOperacao.Erro {{ border-color: #c53b32; color: #8b241e; background: #fff0ef; }}
         .SomenteLeitorTela {{ position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }}
+        @media (max-width: 760px) {{
+            .GradeFormulario {{ grid-template-columns: minmax(0, 1fr); }}
+            .CabecalhoFormulario {{ flex-direction: column; align-items: stretch; }}
+            .SecaoEdicaoProduto {{ padding: 16px; }}
+        }}
     </style>
 
     <div class="CabecalhoFormulario">
@@ -382,6 +463,7 @@ def ComponenteEditarProdutoComLotes(Request, ProdutoEdicao):
         {ErrosDados}
         <div class="GradeFormulario">
             {RenderizarCampo(FormularioDados, "Nome", "Nome do produto")}
+            {RenderizarCampo(FormularioDados, "CodigoBarras", "Código de barras")}
             {RenderizarCampo(FormularioDados, "Categoria", "Categoria")}
             {RenderizarCampo(FormularioDados, "Marca", "Marca", "Opcional para produtos sem marca definida.")}
             {RenderizarCampo(FormularioDados, "UnidadeVenda", "Forma de venda", "A forma de venda não pode ser alterada depois da criação dos lotes.")}
@@ -397,13 +479,14 @@ def ComponenteEditarProdutoComLotes(Request, ProdutoEdicao):
         <p>Cada entrada preserva seu fornecedor, custo, preço de venda e saldo.</p>
         {LotesHtml}
 
-        <form method="post">
+        <form method="post" id="NovaEntradaEstoque">
             <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
             <input type="hidden" name="acao" value="adicionar_lote">
             <h2>Adicionar nova entrada</h2>
             {ErrosLote}
             <div class="GradeFormulario">
                 {RenderizarCampo(FormularioLote, "Fornecedor", "Fornecedor")}
+                {RenderizarCampo(FormularioLote, "DataValidade", "Data de validade (opcional)")}
                 {RenderizarCampo(FormularioLote, "PrecoCusto", "Preço de custo (R$)")}
                 {RenderizarCampo(FormularioLote, "PrecoVenda", "Preço de venda (R$)")}
                 {CampoEntrada}
@@ -416,7 +499,7 @@ def ComponenteEditarProdutoComLotes(Request, ProdutoEdicao):
     """
 
     return HttpResponse(
-        RenderizarLayoutBase("Editar produto", ConteudoPrincipal, RotaAtiva="estoque")
+        RenderizarLayoutBase("Editar produto", ConteudoPrincipal + ObterScriptCodigoProduto(), RotaAtiva="estoque")
     )
 
 
@@ -431,8 +514,7 @@ def ComponenteFormularioProduto(Request, ProdutoId=None):
         Formulario = FormularioProduto(Request.POST, instance=ProdutoEdicao)
 
         if Formulario.is_valid():
-            with transaction.atomic():
-                ProdutoSalvo = Formulario.save()
+            ProdutoSalvo = Formulario.CriarProduto()
             Acao = "atualizado" if ProdutoEdicao else "cadastrado"
             DefinirMensagemProduto(
                 Request,
@@ -440,7 +522,10 @@ def ComponenteFormularioProduto(Request, ProdutoId=None):
             )
             return redirect("Estoque")
     else:
-        Formulario = FormularioProduto(instance=ProdutoEdicao)
+        Formulario = FormularioProduto(
+            instance=ProdutoEdicao,
+            initial={"CodigoBarras": Request.GET.get("codigo", "")},
+        )
 
     Titulo = "Editar produto" if ProdutoEdicao else "Adicionar produto"
     TextoBotao = "Salvar alterações" if ProdutoEdicao else "Cadastrar produto"
@@ -497,7 +582,7 @@ def ComponenteFormularioProduto(Request, ProdutoId=None):
             font-size: 13px;
             font-weight: 700;
         }}
-        .GrupoCampo .CampoFormulario {{ width: 100%; }}
+        .GrupoCampo .CampoFormulario {{ width: 100%; min-width: 0; }}
         .GrupoCampoLargo {{ grid-column: 1 / -1; }}
 
         .AjudaCampo {{
@@ -556,28 +641,75 @@ def ComponenteFormularioProduto(Request, ProdutoId=None):
         }}
         .AvisoFornecedor a {{ color: #056da8; font-weight: 700; }}
 
+        .ConsultaCatalogo {{ margin: 0 0 18px; color: #526473; font-size: 14px; line-height: 1.5; }}
+        .ConsultaCatalogo a {{ color: #056da8; }}
+
+        .CabecalhoCadastroProduto {{ margin-bottom: 12px; }}
+        .CadastroProdutoCompacto {{ padding: 16px; }}
+        .CadastroProdutoCompacto .GradeFormulario {{ gap: 12px 16px; }}
+        .CadastroProdutoCompacto .GrupoCampo label {{ margin-bottom: 5px; }}
+        .CadastroProdutoCompacto .CampoFormulario {{ min-height: 38px; padding: 8px 10px; }}
+        .CadastroProdutoCompacto .ConsultaCatalogo {{ margin-bottom: 12px; line-height: 1.35; }}
+        .CadastroProdutoCompacto .AcoesFormulario {{ margin-top: 14px; padding-top: 12px; }}
+        .CadastroProdutoCompacto .ControleDisponibilidade {{ min-height: 38px; padding: 8px 10px; }}
+        @media (min-width: 1000px) {{
+            .CadastroProdutoCompacto .GradeFormulario {{
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                grid-template-areas:
+                    "Nome Nome CodigoBarras"
+                    "Marca Categoria DataValidade"
+                    "PrecoCusto UnidadeVenda QuantidadeEstoque"
+                    "PrecoVenda Fornecedor EstoqueMinimo";
+            }}
+            .CadastroProdutoCompacto [data-campo="Nome"] {{ grid-area: Nome; }}
+            .CadastroProdutoCompacto [data-campo="CodigoBarras"] {{ grid-area: CodigoBarras; }}
+            .CadastroProdutoCompacto [data-campo="Marca"] {{ grid-area: Marca; }}
+            .CadastroProdutoCompacto [data-campo="Categoria"] {{ grid-area: Categoria; }}
+            .CadastroProdutoCompacto [data-campo="DataValidade"] {{ grid-area: DataValidade; }}
+            .CadastroProdutoCompacto [data-campo="PrecoCusto"] {{ grid-area: PrecoCusto; }}
+            .CadastroProdutoCompacto [data-campo="PrecoVenda"] {{ grid-area: PrecoVenda; }}
+            .CadastroProdutoCompacto [data-campo="UnidadeVenda"] {{ grid-area: UnidadeVenda; }}
+            .CadastroProdutoCompacto [data-campo="Fornecedor"] {{ grid-area: Fornecedor; }}
+            .CadastroProdutoCompacto [data-campo="QuantidadeEstoque"] {{ grid-area: QuantidadeEstoque; }}
+            .CadastroProdutoCompacto [data-campo="EstoqueMinimo"] {{ grid-area: EstoqueMinimo; }}
+            .CadastroProdutoCompacto [data-campo="Disponivel"] {{ grid-column: 3; grid-row: 3 / span 2; }}
+        }}
         [hidden] {{ display: none !important; }}
+        @media (max-width: 760px) {{
+            .GradeFormulario {{ grid-template-columns: minmax(0, 1fr); }}
+            .CabecalhoFormulario {{ flex-direction: column; align-items: stretch; }}
+            .PainelFormulario {{ padding: 16px; }}
+        }}
     </style>
 
-    <div class="CabecalhoFormulario">
+    <div class="CabecalhoFormulario CabecalhoCadastroProduto">
         <h1>{Titulo}</h1>
         <a class="BotaoSecundario" href="/estoque">Voltar ao estoque</a>
     </div>
 
-    <form class="PainelFormulario" method="post">
+    <form class="PainelFormulario CadastroProdutoCompacto" method="post">
         <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
+        <div class="ConsultaCatalogo" id="ConsultaCatalogoProduto" role="status" aria-live="polite" hidden>
+            <span id="MensagemCatalogoProduto"></span>
+            <span id="FonteCatalogoProduto" hidden>
+                Fonte: <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener noreferrer">Open Food Facts</a>
+                <span id="LicencaCatalogoProduto">(<a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL</a>)</span>.
+            </span>
+        </div>
         {ErrosGerais}
         {AvisoFornecedor}
 
         <div class="GradeFormulario">
             {RenderizarCampo(Formulario, "Nome", "Nome do produto")}
-            {RenderizarCampo(Formulario, "Categoria", "Categoria", "Ex.: Alimentos, ferramentas ou papelaria.")}
-            {RenderizarCampo(Formulario, "Marca", "Marca", "Opcional para produtos sem marca definida.")}
-            {RenderizarCampo(Formulario, "Fornecedor", "Fornecedor", "Escolha um fornecedor cadastrado na área Fornecedores.")}
+            {RenderizarCampo(Formulario, "CodigoBarras", "Código de barras")}
+            {RenderizarCampo(Formulario, "Marca", "Marca (opcional)")}
+            {RenderizarCampo(Formulario, "Categoria", "Categoria")}
+            {RenderizarCampo(Formulario, "DataValidade", "Validade do lote inicial (opcional)")}
             {RenderizarCampo(Formulario, "PrecoCusto", "Preço de custo (R$)")}
-            {RenderizarCampo(Formulario, "PrecoVenda", "Preço de venda (R$)")}
             {RenderizarCampo(Formulario, "UnidadeVenda", "Forma de venda")}
             {RenderizarCampo(Formulario, "QuantidadeEstoque", "Quantidade em estoque")}
+            {RenderizarCampo(Formulario, "PrecoVenda", "Preço de venda (R$)")}
+            {RenderizarCampo(Formulario, "Fornecedor", "Fornecedor")}
             {RenderizarCampo(Formulario, "EstoqueMinimo", "Estoque mínimo")}
 
             <div class="GrupoCampo GrupoCampoLargo" data-campo="Disponivel">
@@ -622,12 +754,42 @@ def ComponenteFormularioProduto(Request, ProdutoId=None):
 
             CampoFormaVenda.addEventListener("change", AtualizarCamposEstoque);
             AtualizarCamposEstoque();
+
+            const Formulario = CampoFormaVenda.form;
+            const CampoCodigo = document.getElementById("id_CodigoBarras");
+            const ObterCamposVisiveis = () => Array.from(Formulario.querySelectorAll(".GrupoCampo input, .GrupoCampo select"))
+                .filter((Campo) => Campo !== CampoCodigo && !Campo.matches(":disabled") && !Campo.readOnly && Campo.getClientRects().length)
+                .sort((Primeiro, Segundo) => {{
+                    const CaixaPrimeiro = Primeiro.closest(".GrupoCampo").getBoundingClientRect();
+                    const CaixaSegundo = Segundo.closest(".GrupoCampo").getBoundingClientRect();
+                    return Math.abs(CaixaPrimeiro.top - CaixaSegundo.top) > 2
+                        ? CaixaPrimeiro.top - CaixaSegundo.top : CaixaPrimeiro.left - CaixaSegundo.left;
+                }});
+            Formulario.addEventListener("keydown", (Evento) => {{
+                const Campo = Evento.target;
+                if (Evento.key !== "Enter" || Evento.isComposing || !Campo.matches(".GrupoCampo input, .GrupoCampo select")) return;
+                Evento.preventDefault();
+                if (Evento.repeat || Evento.ctrlKey || Evento.altKey || Evento.metaKey || Evento.shiftKey) return;
+                if (!Campo.checkValidity()) {{
+                    Campo.reportValidity();
+                    return;
+                }}
+                const Campos = ObterCamposVisiveis();
+                const Proximo = Campo === CampoCodigo ? document.getElementById("id_Nome") : Campos[Campos.indexOf(Campo) + 1];
+                (Proximo || Formulario.querySelector('button[type="submit"]')).focus();
+            }});
         }})();
     </script>
     """
 
     return HttpResponse(
-        RenderizarLayoutBase(Titulo, ConteudoPrincipal, RotaAtiva="estoque")
+        RenderizarLayoutBase(
+            Titulo,
+            ConteudoPrincipal + ObterScriptConsultaCatalogoProduto(
+                ConsultarInicial=Request.method == "GET" and bool(Request.GET.get("codigo", "").strip()),
+            ),
+            RotaAtiva="estoque",
+        )
     )
 
 
@@ -699,6 +861,21 @@ def ComponenteAtualizarDataLote(Request, ProdutoId, LoteId):
         Request,
         f"Data do lote #{Lote.ObterNumeroNoProduto()} atualizada.",
     )
+    return redirect("EditarProduto", ProdutoId=ProdutoEdicao.id)
+
+
+@ExigirPost
+def ComponenteAtualizarValidadeLote(Request, ProdutoId, LoteId):
+    ProdutoEdicao = get_object_or_404(Produto, pk=ProdutoId, Ativo=True)
+    Lote = get_object_or_404(LoteEstoque, pk=LoteId, Produto=ProdutoEdicao)
+    Formulario = FormularioValidadeLote(Request.POST, instance=Lote)
+
+    if Formulario.is_valid():
+        Formulario.save()
+        DefinirMensagemProduto(Request, f"Validade do lote #{Lote.Numero} atualizada.")
+    else:
+        DefinirMensagemProduto(Request, "Informe uma data de validade válida.", "erro")
+
     return redirect("EditarProduto", ProdutoId=ProdutoEdicao.id)
 
 

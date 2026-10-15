@@ -8,7 +8,9 @@ from .ApiPaginaPrincipal import BuscarAtalhosOperacionais
 def GerarDadosPaginaPrincipal(Request, BuscaEstoque=""):
     return {
         "ResumoProdutos": GerarResumoProdutos(),
-        "ConsultaEstoque": GerarResumoProdutos(Busca=BuscaEstoque),
+        "ConsultaEstoque": GerarResumoProdutos(
+            Busca=BuscaEstoque, BuscaPorInicio=Request.GET.get("inicio") == "1",
+        ),
         "ResumosCarrinhos": MontarResumosCarrinhos(Request),
         "Atalhos": BuscarAtalhosOperacionais(),
     }

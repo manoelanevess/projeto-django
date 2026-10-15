@@ -12,20 +12,25 @@ from features.fornecedor.ComponenteFornecedor import (
     ComponenteFormularioFornecedor,
 )
 from features.pagina_principal.ComponentePaginaPrincipal import ComponentePaginaPrincipal
+from features.produtos.ComponenteCatalogoProduto import ComponenteConsultarCatalogoProduto, ComponentePesquisarCodigoWeb
 from features.produtos.ComponenteProduto import (
     ComponenteAtualizarDataLote,
+    ComponenteAtualizarValidadeLote,
     ComponenteEncerrarLote,
     ComponenteExcluirLote,
     ComponenteExcluirProduto,
     ComponenteFormularioProduto,
+    ComponenteLerCodigoEstoque,
     ComponenteRedirecionarProdutos,
 )
 from features.usuarios.ComponenteUsuario import ComponenteLogin, ComponenteLogout
 from features.vendas.ComponenteCarrinho import (
+    ComponenteAbrirCarrinho,
     ComponenteAdicionarItem,
     ComponenteCancelarCarrinho,
     ComponenteCarrinho,
     ComponenteConcluirCompra,
+    ComponenteFecharCarrinho,
     ComponentePesquisarProdutos,
     ComponenteRemoverItem,
     ComponenteRenomearCarrinho,
@@ -35,6 +40,7 @@ from features.vendas.ComponenteContaCliente import (
     ComponenteRegistrarPagamentoContaCliente,
 )
 from features.vendas.ComponenteHistoricoVenda import ComponenteHistoricoVendas
+from features.vendas.ComponenteLeitorCodigoBarras import ComponenteLerCodigoCarrinho
 
 
 ProtegerComponente = ExigirLogin(login_url="Login")
@@ -45,6 +51,9 @@ urlpatterns = [
     path("login", ComponenteLogin, name="Login"),
     path("logout", ComponenteLogout, name="Logout"),
     path("carrinho", ProtegerComponente(ComponenteCarrinho), name="Carrinho"),
+    path("carrinho/abrir", ProtegerComponente(ComponenteAbrirCarrinho), name="AbrirCarrinho"),
+    path("carrinho/fechar", ProtegerComponente(ComponenteFecharCarrinho), name="FecharCarrinho"),
+    path("carrinho/ler-codigo", ProtegerComponente(ComponenteLerCodigoCarrinho), name="LerCodigoCarrinho"),
     path(
         "carrinho/pesquisar",
         ProtegerComponente(ComponentePesquisarProdutos),
@@ -96,6 +105,13 @@ urlpatterns = [
         name="ListaProdutos",
     ),
     path("estoque", ProtegerComponente(ComponenteEstoque), name="Estoque"),
+    path("estoque/ler-codigo", ProtegerComponente(ComponenteLerCodigoEstoque), name="LerCodigoEstoque"),
+    path("estoque/pesquisar-codigo-web", ProtegerComponente(ComponentePesquisarCodigoWeb), name="PesquisarCodigoWeb"),
+    path(
+        "estoque/consultar-codigo",
+        ProtegerComponente(ComponenteConsultarCatalogoProduto),
+        name="ConsultarCatalogoProduto",
+    ),
     path(
         "dashboard",
         ProtegerComponente(ComponenteDashboard),
@@ -120,6 +136,11 @@ urlpatterns = [
         "estoque/<int:ProdutoId>/lotes/<int:LoteId>/data",
         ProtegerComponente(ComponenteAtualizarDataLote),
         name="AtualizarDataLoteEstoque",
+    ),
+    path(
+        "estoque/<int:ProdutoId>/lotes/<int:LoteId>/validade",
+        ProtegerComponente(ComponenteAtualizarValidadeLote),
+        name="AtualizarValidadeLoteEstoque",
     ),
     path(
         "estoque/<int:ProdutoId>/lotes/<int:LoteId>/excluir",

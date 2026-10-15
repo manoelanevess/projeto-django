@@ -9,6 +9,10 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 CaminhoEnv = BASE_DIR / ".env"
 load_dotenv(CaminhoEnv)
 
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
+PESQUISA_PRODUTO_IA_ATIVA = os.environ.get("PESQUISA_PRODUTO_IA_ATIVA", "0") == "1"
+PESQUISA_PRODUTO_IA_MODELO = os.environ.get("PESQUISA_PRODUTO_IA_MODELO", "gpt-5.4-mini").strip()
+
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "django-insecure-projeto-estoque-dev")
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
 HostsPermitidos = os.environ.get(

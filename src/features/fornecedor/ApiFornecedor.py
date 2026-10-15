@@ -4,19 +4,20 @@ from django.db.models import Q
 from .models import Fornecedor
 
 
-def BuscarFornecedores(Busca="", SomenteAtivos=True):
+def BuscarFornecedores(Busca="", SomenteAtivos=True, BuscaPorInicio=False):
     Fornecedores = Fornecedor.objects.all()
 
     if SomenteAtivos:
         Fornecedores = Fornecedores.filter(Ativo=True)
 
     if Busca:
-        Fornecedores = Fornecedores.filter(
+        FiltroBusca = Q(Nome__unaccent__istartswith=Busca) if BuscaPorInicio else (
             Q(Nome__icontains=Busca)
             | Q(Telefone__icontains=Busca)
             | Q(Email__icontains=Busca)
             | Q(Cidade__icontains=Busca)
         )
+        Fornecedores = Fornecedores.filter(FiltroBusca)
 
     return Fornecedores.order_by("Nome")
 

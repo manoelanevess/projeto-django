@@ -1,9 +1,9 @@
 """Testes do carrinho, pagamento e baixa automática do estoque."""
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model as ObterModeloUsuario
-from django.test import TestCase
+from django.test import Client, TestCase
 from django.utils import timezone
 
 from features.fornecedor.models import Fornecedor
@@ -13,11 +13,485 @@ from .LogicaCarrinho import ObterChaveLote
 from .LogicaVenda import ConsolidarVendasDeMesesAnteriores, ObterResumoFinanceiro
 from .models import (
     ContaCliente,
+    ItemRegistroVendaAntiga,
+    ItemVenda,
     LancamentoContaCliente,
     RegistroVendaAntiga,
     ResumoVendaMensal,
     Venda,
 )
+
+
+class TesteCarrinhosDinamicos(TestCase):
+    def setUp(self):
+        self.Usuario = ObterModeloUsuario().objects.create_user(username="carrinhos_dinamicos")
+        self.client.force_login(self.Usuario)
+        self.Fornecedor = Fornecedor.objects.create(Nome="Fornecedor dos carrinhos")
+        self.Produto = Produto.objects.create(
+            Nome="Produto dos carrinhos", CodigoBarras="0012345678905", Fornecedor=self.Fornecedor,
+            QuantidadeEstoque=Decimal("2.000"), PrecoCusto=Decimal("6.00"), PrecoVenda=Decimal("10.00"),
+        )
+        self.Antigo = self.Produto.LotesEstoque.get()
+        self.Novo = LoteEstoque.objects.create(
+            Produto=self.Produto, Fornecedor=self.Fornecedor,
+            QuantidadeInicial=Decimal("10.000"), QuantidadeDisponivel=Decimal("10.000"),
+            PrecoCusto=Decimal("7.00"), PrecoVenda=Decimal("12.00"),
+        )
+        self.Produto.SincronizarResumoLotes()
+
+    def AbrirAte(self, Ultimo):
+        for Numero in range(4, Ultimo + 1):
+            Resposta = self.client.post("/carrinho/abrir")
+            self.assertEqual(Resposta.url, f"/carrinho?carrinho={Numero}")
+
+    def test_AbreMaisDeTresSemLimiteFixoEPersisteOrdemNumericaNasTelas(self):
+        self.AbrirAte(15)
+        self.assertEqual(self.client.session["NumerosCarrinhosVenda"], [str(Numero) for Numero in range(1, 16)])
+        Carrinho = self.client.get("/carrinho?carrinho=15")
+        Principal = self.client.get("/")
+        self.assertContains(Carrinho, 'class="ItemAbaCarrinho"', count=15)
+        self.assertContains(Principal, 'class="CartaoAtendimento"', count=15)
+        self.assertContains(Principal, 'class="PainelCarrinhoFlutuante"', count=15)
+        for Pagina in (Carrinho, Principal):
+            self.assertContains(Pagina, 'aria-label="Abrir novo carrinho"', count=1)
+            Texto = Pagina.content.decode()
+            self.assertLess(Texto.index("Carrinho 9"), Texto.index("Carrinho 10"))
+        self.assertContains(Carrinho, 'data-leitor-codigo="15"')
+
+    def test_AbrirPreservaItensENomesDeSessoesAnteriores(self):
+        self.client.post("/carrinho/ler-codigo", {"carrinho": "2", "codigo": self.Produto.CodigoBarras})
+        self.client.post("/carrinho/nome", {"carrinho": "2", "nome_cliente": "Maria"})
+        Antes = dict(self.client.session["CarrinhosVenda"])
+        Resposta = self.client.post("/carrinho/abrir", {"retorno": "pagina-principal"})
+        self.assertEqual(Resposta.url, "/?carrinho=4&carrinhos_abertos=1%2C2%2C3%2C4")
+        self.assertEqual(self.client.session["CarrinhosVenda"], Antes)
+        self.assertEqual(self.client.session["NomesCarrinhosVenda"], {"2": "Maria"})
+
+    def test_NovosCarrinhosMantemFifoEstoqueENomesIndependentes(self):
+        self.AbrirAte(6)
+        for Numero in ("4", "6"):
+            Resposta = self.client.post("/carrinho/ler-codigo", {
+                "carrinho": Numero, "codigo": self.Produto.CodigoBarras, "quantidade": "3",
+            })
+            self.assertEqual(Resposta.status_code, 200)
+            self.client.post("/carrinho/nome", {"carrinho": Numero, "nome_cliente": f"Cliente {Numero}"})
+        Carrinho6 = dict(self.client.session["CarrinhosVenda"]["6"])
+        self.assertEqual(Carrinho6, {ObterChaveLote(self.Antigo.id): "2.000", ObterChaveLote(self.Novo.id): "1.000"})
+        self.Produto.refresh_from_db()
+        self.assertEqual(self.Produto.QuantidadeEstoque, Decimal("12.000"))
+        self.client.post("/carrinho/concluir", {"carrinho": "4", "forma_pagamento": Venda.CONTA_CLIENTE})
+        Concluida = Venda.objects.get()
+        self.assertEqual(Concluida.Total, Decimal("32.00"))
+        self.assertEqual(Concluida.NomeCliente, "Cliente 4")
+        self.assertEqual(Concluida.ContaCliente.NomeCliente, "Cliente 4")
+        self.assertEqual(self.client.session["CarrinhosVenda"]["6"], Carrinho6)
+        self.assertEqual(self.client.session["NomesCarrinhosVenda"], {"6": "Cliente 6"})
+        self.assertIn("4", self.client.session["NumerosCarrinhosVenda"])
+        self.Produto.refresh_from_db()
+        self.assertEqual(self.Produto.QuantidadeEstoque, Decimal("9.000"))
+
+    def test_CancelarERemoverEmNovoCarrinhoNaoAfetaOutroNemFechaAba(self):
+        self.AbrirAte(4)
+        for Numero in ("2", "4"):
+            self.client.post("/carrinho/ler-codigo", {"carrinho": Numero, "codigo": self.Produto.CodigoBarras})
+        Antes = dict(self.client.session["CarrinhosVenda"]["2"])
+        self.client.post("/carrinho/remover", {"carrinho": "4", "item": ObterChaveLote(self.Antigo.id)})
+        self.assertEqual(self.client.session["CarrinhosVenda"]["4"], {})
+        self.client.post("/carrinho/cancelar", {"carrinho": "4"})
+        self.assertEqual(self.client.session["CarrinhosVenda"]["2"], Antes)
+        self.assertIn("4", self.client.session["NumerosCarrinhosVenda"])
+
+    def test_FecharRemoveSomenteAtendimentoSelecionadoSemBaixa(self):
+        self.AbrirAte(6)
+        for Numero in ("2", "6"):
+            self.client.post("/carrinho/ler-codigo", {"carrinho": Numero, "codigo": self.Produto.CodigoBarras})
+            self.client.post("/carrinho/nome", {"carrinho": Numero, "nome_cliente": f"Cliente {Numero}"})
+        self.client.post("/carrinho/fechar", {"carrinho": "6", "carrinho_selecionado": "2"})
+        self.assertNotIn("6", self.client.session["NumerosCarrinhosVenda"])
+        self.assertNotIn("6", self.client.session["CarrinhosVenda"])
+        self.assertNotIn("6", self.client.session["NomesCarrinhosVenda"])
+        self.assertIn("2", self.client.session["CarrinhosVenda"])
+        self.assertNotContains(self.client.get("/"), 'id="PainelCarrinho-6"')
+        self.Produto.refresh_from_db()
+        self.assertEqual(self.Produto.QuantidadeEstoque, Decimal("12.000"))
+        self.assertFalse(Venda.objects.exists())
+
+    def test_PodeFecharTodosInclusiveIniciaisEReabrirPeloMais(self):
+        for Numero in ("1", "2", "3"):
+            self.client.post("/carrinho/fechar", {"carrinho": Numero})
+        self.assertEqual(self.client.session["NumerosCarrinhosVenda"], [])
+        for Rota in ("/", "/carrinho", "/carrinho?carrinho=3"):
+            Pagina = self.client.get(Rota)
+            self.assertContains(Pagina, "Nenhum carrinho aberto.")
+            self.assertContains(Pagina, 'aria-label="Abrir novo carrinho"')
+        self.assertEqual(self.client.post("/carrinho/abrir").url, "/carrinho?carrinho=1")
+        self.assertEqual(self.client.session["NumerosCarrinhosVenda"], ["1"])
+
+    def test_ExigeLoginPostECsrfParaAbrirEFechar(self):
+        ClienteCsrf = Client(enforce_csrf_checks=True)
+        ClienteCsrf.force_login(self.Usuario)
+        for Rota in ("/carrinho/abrir", "/carrinho/fechar"):
+            self.assertEqual(self.client.get(Rota).status_code, 405)
+            self.assertEqual(ClienteCsrf.post(Rota).status_code, 403)
+            self.assertEqual(Client().post(Rota).status_code, 302)
+
+    def test_NumeroInexistenteOuMalformadoNaoCriaCarrinho(self):
+        for Numero in ("4", "0", "-1", "04", "1.0", "abc", "١"):
+            with self.subTest(Numero=Numero):
+                self.assertEqual(self.client.post("/carrinho/ler-codigo", {
+                    "carrinho": Numero, "codigo": self.Produto.CodigoBarras,
+                }).status_code, 400)
+                self.assertContains(self.client.get("/carrinho", {"carrinho": Numero}), 'data-leitor-codigo="1"')
+        self.assertNotIn("NumerosCarrinhosVenda", self.client.session)
+
+    def test_RecuperaSessaoLegadaEIgnoraRegistroCorrompido(self):
+        Sessao = self.client.session
+        Sessao["NumerosCarrinhosVenda"] = "invalido"
+        Sessao["CarrinhosVenda"] = {"7": {ObterChaveLote(self.Antigo.id): "1.000"}, "abc": {}}
+        Sessao["NomesCarrinhosVenda"] = {"7": "Cliente legado"}
+        Sessao.save()
+        self.assertContains(self.client.get("/carrinho?carrinho=7"), "Cliente legado")
+        self.assertEqual(self.client.post("/carrinho/abrir").url, "/carrinho?carrinho=8")
+        Sessao = self.client.session
+        Sessao["NumerosCarrinhosVenda"] = ["8", "2", "2", "abc", None, 5, "0", ""]
+        Sessao.save()
+        self.assertContains(self.client.get("/"), 'class="CartaoAtendimento"', count=2)
+
+
+class TesteFiltrosHistoricoVenda(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.Usuario = ObterModeloUsuario().objects.create_user(username="filtros_vendas")
+        cls.OutroUsuario = ObterModeloUsuario().objects.create_user(username="outras_vendas")
+        cls.Dia = timezone.localdate().replace(day=10)
+        cls.DiaAntigo = (cls.Dia.replace(day=1) - timedelta(days=1)).replace(day=10)
+        cls.Vendas = {}
+        cls.Registros = {}
+
+        for Indice, (Pagamento, _) in enumerate(Venda.OpcoesFormaPagamento):
+            DataVenda = timezone.make_aware(datetime.combine(cls.Dia, datetime.min.time()))
+
+            if Pagamento == Venda.PIX:
+                DataVenda += timedelta(hours=23, minutes=59, seconds=59, microseconds=999999)
+            elif Pagamento == Venda.CONTA_CLIENTE:
+                DataVenda += timedelta(days=1)
+
+            VendaAtual = Venda.objects.create(
+                Proprietario=cls.Usuario, NomeCliente=f"Cliente atual {Pagamento}",
+                FormaPagamento=Pagamento, Total=Decimal("15.00"),
+            )
+            Venda.objects.filter(pk=VendaAtual.pk).update(CriadaEm=DataVenda)
+            cls.Vendas[Pagamento] = VendaAtual
+            cls.Registros[Pagamento] = RegistroVendaAntiga.objects.create(
+                Proprietario=cls.Usuario, VendaOriginalId=90000 + Indice,
+                NomeCliente=f"Cliente antigo {Pagamento}", FormaPagamento=Pagamento,
+                Total=Decimal("12.00"),
+                CriadaEm=timezone.make_aware(datetime.combine(cls.DiaAntigo, datetime.min.time())),
+            )
+
+        cls.VendaAnterior = Venda.objects.create(
+            Proprietario=cls.Usuario, NomeCliente="Cliente do dia anterior",
+            FormaPagamento=Venda.DINHEIRO, Total=Decimal("8.00"),
+        )
+        Venda.objects.filter(pk=cls.VendaAnterior.pk).update(
+            CriadaEm=timezone.make_aware(datetime.combine(cls.Dia, datetime.min.time()))
+            - timedelta(microseconds=1)
+        )
+        Venda.objects.create(
+            Proprietario=cls.OutroUsuario, NomeCliente="Venda de outro proprietario",
+            FormaPagamento=Venda.PIX, Total=Decimal("99.00"),
+        )
+        RegistroVendaAntiga.objects.create(
+            Proprietario=cls.OutroUsuario, VendaOriginalId=99999,
+            NomeCliente="Arquivo de outro proprietario", FormaPagamento=Venda.PIX,
+            Total=Decimal("99.00"), CriadaEm=cls.Registros[Venda.PIX].CriadaEm,
+        )
+        FornecedorTeste = Fornecedor.objects.create(Nome="Fornecedor dos filtros")
+        ProdutoTeste = Produto.objects.create(
+            Nome="Produto dos filtros", Categoria="Alimentos", Fornecedor=FornecedorTeste,
+            PrecoCusto=Decimal("1.11"), PrecoVenda=Decimal("7.50"),
+            QuantidadeEstoque=Decimal("10.000"),
+        )
+
+        for _ in range(2):
+            ItemVenda.objects.create(
+                Venda=cls.Vendas[Venda.PIX], Produto=ProdutoTeste, NomeProduto="Arroz filtrado",
+                UnidadeVenda="unidade", Quantidade=Decimal("1.000"),
+                CustoUnitario=Decimal("1.11"), PrecoUnitario=Decimal("7.50"),
+                Subtotal=Decimal("7.50"),
+            )
+
+        ItemRegistroVendaAntiga.objects.create(
+            Registro=cls.Registros[Venda.PIX], NomeProduto="Arroz arquivado",
+            UnidadeVenda="unidade", Quantidade=Decimal("1.000"),
+            PrecoUnitario=Decimal("12.00"), Subtotal=Decimal("12.00"),
+        )
+
+    def setUp(self):
+        self.client.force_login(self.Usuario)
+
+    def Consultar(self, **Filtros):
+        return self.client.get("/vendas/historico", Filtros)
+
+    def test_sem_filtros_preserva_historico_e_isolamento_por_proprietario(self):
+        Resposta = self.Consultar()
+        self.assertContains(Resposta, 'class="LinhaHistoricoVenda"', count=7)
+        self.assertNotContains(Resposta, "de outro proprietario")
+        self.assertContains(Resposta, '<option value="conta_cliente">Conta</option>', html=True)
+        self.assertContains(Resposta, 'href="/vendas/historico">Limpar filtros</a>')
+
+    def test_periodo_inclui_dia_inteiro_no_fuso_local(self):
+        Resposta = self.Consultar(data_inicial=self.Dia.isoformat(), data_final=self.Dia.isoformat())
+        self.assertContains(Resposta, 'class="LinhaHistoricoVenda"', count=2)
+        self.assertContains(Resposta, "Cliente atual dinheiro")
+        self.assertContains(Resposta, "Cliente atual pix")
+        self.assertNotContains(Resposta, "Cliente atual conta_cliente")
+        self.assertNotContains(Resposta, "Cliente do dia anterior")
+        self.assertNotContains(Resposta, "Cliente antigo")
+        self.assertContains(Resposta, f'value="{self.Dia.isoformat()}"', count=2)
+
+    def test_datas_podem_ser_filtradas_separadamente(self):
+        RespostaInicial = self.Consultar(data_inicial=(self.Dia + timedelta(days=1)).isoformat())
+        self.assertContains(RespostaInicial, 'class="LinhaHistoricoVenda"', count=1)
+        self.assertContains(RespostaInicial, "Cliente atual conta_cliente")
+        RespostaFinal = self.Consultar(data_final=self.DiaAntigo.isoformat())
+        self.assertContains(RespostaFinal, 'class="LinhaHistoricoVenda"', count=3)
+        self.assertNotContains(RespostaFinal, "Cliente atual")
+
+    def test_pagamentos_filtram_vendas_atuais_e_arquivadas(self):
+        for Pagamento, _ in Venda.OpcoesFormaPagamento:
+            with self.subTest(Pagamento=Pagamento):
+                Resposta = self.Consultar(pagamento=Pagamento)
+                Quantidade = 3 if Pagamento == Venda.DINHEIRO else 2
+                self.assertContains(Resposta, 'class="LinhaHistoricoVenda"', count=Quantidade)
+                self.assertContains(Resposta, f"Cliente atual {Pagamento}")
+                self.assertContains(Resposta, f"Cliente antigo {Pagamento}")
+                self.assertContains(Resposta, f'<option value="{Pagamento}" selected>')
+
+    def test_situacao_separa_vendas_atuais_e_arquivadas(self):
+        Atuais = self.Consultar(situacao="atual")
+        self.assertContains(Atuais, 'class="LinhaHistoricoVenda"', count=4)
+        self.assertNotContains(Atuais, "Cliente antigo")
+        Arquivadas = self.Consultar(situacao="arquivada")
+        self.assertContains(Arquivadas, 'class="LinhaHistoricoVenda"', count=3)
+        self.assertNotContains(Arquivadas, "Cliente atual")
+
+    def test_combina_busca_periodo_pagamento_e_situacao_sem_duplicar_vendas(self):
+        Resposta = self.Consultar(
+            busca="Arroz", data_inicial=self.Dia.isoformat(), data_final=self.Dia.isoformat(),
+            pagamento="pix", situacao="atual",
+        )
+        self.assertContains(Resposta, 'class="LinhaHistoricoVenda"', count=1)
+        self.assertContains(Resposta, "Arroz filtrado", count=2)
+        self.assertContains(Resposta, 'value="Arroz"')
+        self.assertContains(Resposta, 'aria-expanded="false"')
+        self.assertNotContains(Resposta, "Arroz arquivado")
+        self.assertNotContains(Resposta, "1,11")
+
+    def test_busca_numero_cliente_e_produto_das_vendas_antigas(self):
+        for Busca in ("Arroz arquivado", "Cliente antigo pix", str(self.Registros[Venda.PIX].VendaOriginalId)):
+            with self.subTest(Busca=Busca):
+                Resposta = self.Consultar(busca=Busca, pagamento="pix", situacao="arquivada")
+                self.assertContains(Resposta, 'class="LinhaHistoricoVenda"', count=1)
+                self.assertContains(Resposta, "Arroz arquivado")
+
+        RespostaAtual = self.Consultar(busca=str(self.Vendas[Venda.PIX].pk), situacao="atual")
+        self.assertContains(RespostaAtual, 'class="LinhaHistoricoVenda"', count=1)
+        self.assertContains(RespostaAtual, "Cliente atual pix")
+
+    def test_sem_resultado_oferece_limpar_filtros(self):
+        Resposta = self.Consultar(busca="cliente inexistente", pagamento="pix")
+        self.assertContains(Resposta, "Nenhuma venda corresponde aos filtros selecionados.")
+        self.assertNotContains(Resposta, 'class="LinhaHistoricoVenda"')
+
+    def test_filtros_invalidos_mostram_erro_sem_listar_vendas(self):
+        Casos = [
+            ({"data_inicial": "nao-e-data"}, "Informe uma data inicial válida."),
+            ({"data_final": "2026-02-30"}, "Informe uma data final válida."),
+            ({"data_inicial": "2026-10-20", "data_final": "2026-10-01"}, "A data final deve ser igual ou posterior à data inicial."),
+            ({"pagamento": "invalido"}, "Selecione uma forma de pagamento válida."),
+            ({"situacao": "invalida"}, "Selecione uma situação válida."),
+        ]
+
+        for Filtros, Erro in Casos:
+            with self.subTest(Filtros=Filtros):
+                Resposta = self.Consultar(**Filtros)
+                self.assertContains(Resposta, Erro)
+                self.assertContains(Resposta, 'aria-invalid="true"')
+                self.assertContains(Resposta, "Corrija os filtros para consultar as vendas.")
+                self.assertNotContains(Resposta, 'class="LinhaHistoricoVenda"')
+
+    def test_texto_de_busca_e_escapado(self):
+        Resposta = self.Consultar(busca='<script>alert("teste")</script>')
+        self.assertNotContains(Resposta, '<script>alert("teste")</script>')
+        self.assertContains(Resposta, "&lt;script&gt;")
+
+    def test_BuscaIncrementalPreservaFormularioFiltrosEDetalhes(self):
+        Resposta = self.Consultar(busca="Arroz", pagamento="pix", situacao="atual")
+        for Identificador in ("FormularioBuscaVendas", "FiltroVendaBusca", "ResultadosVendas", "ErroBuscaVendas"):
+            self.assertContains(Resposta, f'id="{Identificador}"')
+        self.assertContains(Resposta, 'Campo.addEventListener("input"')
+        self.assertContains(Resposta, '"busca-incremental-atualizada"')
+        self.assertContains(Resposta, 'document.getElementById("ResultadosVendas").addEventListener("click"')
+        self.assertContains(Resposta, '<option value="pix" selected>')
+        self.assertContains(Resposta, '<option value="atual" selected>')
+        self.assertContains(Resposta, "Arroz filtrado")
+        self.assertNotContains(Resposta, "Arroz arquivado")
+
+    def test_BuscaIncrementalMantemAlvosDosErrosAoCorrigirDatas(self):
+        Invalida = self.Consultar(data_inicial="2026-10-20", data_final="2026-10-01")
+        self.assertContains(Invalida, 'id="FiltroVendaDataFinalErro">A data final')
+        self.assertContains(Invalida, 'aria-describedby="FiltroVendaDataFinalErro"')
+        Valida = self.Consultar(data_inicial=self.Dia.isoformat(), data_final=self.Dia.isoformat())
+        self.assertContains(Valida, 'id="FiltroVendaDataFinalErro" hidden>')
+        self.assertNotContains(Valida, 'aria-invalid="true"')
+
+
+class TesteLeitorCodigoBarras(TestCase):
+    def setUp(self):
+        self.Usuario = ObterModeloUsuario().objects.create_user(username="leitor_codigo")
+        self.client.force_login(self.Usuario)
+        self.Fornecedor = Fornecedor.objects.create(Nome="Fornecedor do leitor")
+        self.Arroz = Produto.objects.create(
+            Nome="Arroz com codigo", CodigoBarras="0012345678905", Categoria="Alimentos",
+            Fornecedor=self.Fornecedor, QuantidadeEstoque=Decimal("2.000"),
+            PrecoCusto=Decimal("6.00"), PrecoVenda=Decimal("10.00"),
+        )
+        self.LoteAntigo = self.Arroz.LotesEstoque.get()
+        self.LoteNovo = LoteEstoque.objects.create(
+            Produto=self.Arroz, Fornecedor=self.Fornecedor,
+            QuantidadeInicial=Decimal("3.000"), QuantidadeDisponivel=Decimal("3.000"),
+            PrecoCusto=Decimal("7.00"), PrecoVenda=Decimal("12.00"),
+        )
+        self.Arroz.SincronizarResumoLotes()
+        self.Batata = Produto.objects.create(
+            Nome="Batata com codigo", CodigoBarras="0009876543210", Fornecedor=self.Fornecedor,
+            UnidadeVenda=Produto.QUILOGRAMA, QuantidadeEstoque=None, EstoqueMinimo=None,
+            PrecoCusto=Decimal("2.00"), PrecoVenda=Decimal("4.00"),
+        )
+
+    def test_LeiturasRepetidasSomamUnidadesNoCarrinhoSelecionadoSemBaixa(self):
+        for Numero in ["1", "1", "2"]:
+            Resposta = self.client.post("/carrinho/ler-codigo", {"carrinho": Numero, "codigo": self.Arroz.CodigoBarras})
+            self.assertEqual(Resposta.status_code, 200)
+        Carrinhos = self.client.session["CarrinhosVenda"]
+        self.assertEqual(Carrinhos["1"], {ObterChaveLote(self.LoteAntigo.id): "2.000"})
+        self.assertEqual(Carrinhos["2"], {ObterChaveLote(self.LoteAntigo.id): "1.000"})
+        self.Arroz.refresh_from_db()
+        self.assertEqual(self.Arroz.QuantidadeEstoque, Decimal("5.000"))
+        self.assertFalse(Venda.objects.exists())
+
+    def test_LeituraDistribuiLotesEConcluiVendaComValoresCorretos(self):
+        Resposta = self.client.post("/carrinho/ler-codigo", {
+            "carrinho": "3", "codigo": self.Arroz.CodigoBarras, "quantidade": "4",
+        })
+        self.assertEqual(Resposta.status_code, 200)
+        self.assertEqual(self.client.session["CarrinhosVenda"]["3"], {
+            ObterChaveLote(self.LoteAntigo.id): "2.000", ObterChaveLote(self.LoteNovo.id): "2.000",
+        })
+        self.client.post("/carrinho/concluir", {"carrinho": "3", "forma_pagamento": Venda.PIX})
+        VendaConcluida = Venda.objects.get()
+        self.assertEqual(VendaConcluida.Total, Decimal("44.00"))
+        self.assertEqual(VendaConcluida.Lucro, Decimal("18.00"))
+        self.Arroz.refresh_from_db()
+        self.assertEqual(self.Arroz.QuantidadeEstoque, Decimal("1.000"))
+
+    def test_PesoExigeQuantidadeAntesDeAdicionar(self):
+        Resposta = self.client.post("/carrinho/ler-codigo", {"codigo": self.Batata.CodigoBarras})
+        self.assertTrue(Resposta.json()["RequerQuantidade"])
+        self.assertNotIn("CarrinhosVenda", self.client.session)
+        Resposta = self.client.post("/carrinho/ler-codigo", {"codigo": self.Batata.CodigoBarras, "quantidade": "0,750"})
+        self.assertEqual(Resposta.status_code, 200)
+        self.client.post("/carrinho/concluir", {"forma_pagamento": Venda.PIX})
+        self.assertEqual(Venda.objects.get().Total, Decimal("3.00"))
+        self.Batata.refresh_from_db()
+        self.assertIsNone(self.Batata.QuantidadeEstoque)
+        self.assertTrue(self.Batata.Disponivel)
+
+    def test_LeituraExigeCodigoExatoEPreservaZeros(self):
+        for Codigo in ["12345678905", "001234", "codigo desconhecido"]:
+            with self.subTest(Codigo=Codigo):
+                Resposta = self.client.post("/carrinho/ler-codigo", {"codigo": Codigo})
+                self.assertEqual(Resposta.status_code, 404)
+        self.assertNotIn("CarrinhosVenda", self.client.session)
+        Pesquisa = self.client.get("/carrinho/pesquisar", {"busca": self.Arroz.CodigoBarras})
+        self.assertEqual([Item["Id"] for Item in Pesquisa.json()["Produtos"]], [self.Arroz.id])
+
+    def test_LeituraSemEstoqueEProdutoInativoNaoAlteramCarrinho(self):
+        self.Arroz.LotesEstoque.update(QuantidadeDisponivel=Decimal("0.000"))
+        Resposta = self.client.post("/carrinho/ler-codigo", {"codigo": self.Arroz.CodigoBarras})
+        self.assertEqual(Resposta.status_code, 400)
+        self.Arroz.Ativo = False
+        self.Arroz.save(update_fields=["Ativo"])
+        Resposta = self.client.post("/carrinho/ler-codigo", {"codigo": self.Arroz.CodigoBarras})
+        self.assertEqual(Resposta.status_code, 404)
+        self.assertNotIn("CarrinhosVenda", self.client.session)
+
+    def test_LeituraRejeitaQuantidadeInvalidaECarrinhoInexistente(self):
+        for Quantidade in ["NaN", "Infinity", "0", "-1", "0.0001", "1000000000"]:
+            with self.subTest(Quantidade=Quantidade):
+                Resposta = self.client.post("/carrinho/ler-codigo", {"codigo": self.Batata.CodigoBarras, "quantidade": Quantidade})
+                self.assertEqual(Resposta.status_code, 400)
+        Resposta = self.client.post("/carrinho/ler-codigo", {"carrinho": "4", "codigo": self.Arroz.CodigoBarras})
+        self.assertEqual(Resposta.status_code, 400)
+        self.assertNotIn("CarrinhosVenda", self.client.session)
+
+    def test_PesquisaUnificadaNaoAdicionaNomesNemCodigosParciais(self):
+        for Termo in ["Arroz", "001234", "99999999", "Produto " * 12]:
+            with self.subTest(Termo=Termo):
+                Resposta = self.client.post("/carrinho/ler-codigo", {
+                    "carrinho": "2", "codigo": Termo, "permitir_pesquisa": "1",
+                })
+                self.assertEqual(Resposta.status_code, 200)
+                self.assertEqual(Resposta.json(), {"Pesquisar": True})
+        self.assertNotIn("CarrinhosVenda", self.client.session)
+        self.assertFalse(Venda.objects.exists())
+
+    def test_PesquisaUnificadaAdicionaCodigoAlfanumericoExato(self):
+        self.Arroz.CodigoBarras = "ARZ-001"
+        self.Arroz.save(update_fields=["CodigoBarras"])
+        Resposta = self.client.post("/carrinho/ler-codigo", {
+            "carrinho": "2", "codigo": "ARZ-001", "permitir_pesquisa": "1",
+        })
+        self.assertEqual(Resposta.status_code, 200)
+        self.assertFalse(Resposta.json()["RequerQuantidade"])
+        self.assertEqual(self.client.session["CarrinhosVenda"]["2"], {
+            ObterChaveLote(self.LoteAntigo.id): "1.000",
+        })
+
+    def test_PesquisaUnificadaMantemErrosDeProdutoInativoECarrinhoInvalido(self):
+        self.Arroz.Ativo = False
+        self.Arroz.save(update_fields=["Ativo"])
+        Resposta = self.client.post("/carrinho/ler-codigo", {
+            "codigo": self.Arroz.CodigoBarras, "permitir_pesquisa": "1",
+        })
+        self.assertEqual(Resposta.status_code, 404)
+        Resposta = self.client.post("/carrinho/ler-codigo", {
+            "carrinho": "4", "codigo": "Arroz", "permitir_pesquisa": "1",
+        })
+        self.assertEqual(Resposta.status_code, 400)
+        self.assertNotIn("CarrinhosVenda", self.client.session)
+
+    def test_PaginasUsamBarraDePesquisaSemCampoSeparadoDeCodigo(self):
+        Carrinho = self.client.get("/carrinho?carrinho=2&busca=Arroz")
+        self.assertContains(Carrinho, 'id="BuscaProdutoCarrinho"')
+        self.assertContains(Carrinho, 'data-leitor-codigo="2"')
+        self.assertContains(Carrinho, 'value="Arroz"')
+        self.assertNotContains(Carrinho, 'id="CodigoCarrinho-')
+        Principal = self.client.get("/")
+        for Numero in ["1", "2", "3"]:
+            self.assertContains(Principal, f'id="BuscaCarrinho-{Numero}"')
+            self.assertContains(Principal, f'data-leitor-codigo="{Numero}"')
+        self.assertNotContains(Principal, 'id="CodigoCarrinho-')
+
+    def test_LeituraProtegeMetodoCsrfEAutenticacao(self):
+        self.assertEqual(self.client.get("/carrinho/ler-codigo").status_code, 405)
+        ClienteCsrf = Client(enforce_csrf_checks=True)
+        ClienteCsrf.force_login(self.Usuario)
+        self.assertEqual(ClienteCsrf.post("/carrinho/ler-codigo", {"codigo": self.Arroz.CodigoBarras}).status_code, 403)
+        self.client.logout()
+        self.assertEqual(self.client.post("/carrinho/ler-codigo", {"codigo": self.Arroz.CodigoBarras}).status_code, 302)
+        self.assertEqual(self.client.get("/estoque/ler-codigo", {"codigo": self.Arroz.CodigoBarras}).status_code, 302)
 
 
 class TesteCarrinhosVenda(TestCase):
@@ -668,6 +1142,16 @@ class TesteCarrinhosVenda(TestCase):
         self.assertNotIn("2", self.client.session.get("NomesCarrinhosVenda", {}))
         self.assertNotContains(self.client.get("/"), "Maria da Silva")
         self.assertContains(self.client.get("/dashboard"), "Maria da Silva")
+
+    def test_ContinhasNaoMostramBotaoAbrirAtendimento(self):
+        PaginaVazia = self.client.get("/continhas")
+        self.assertContains(PaginaVazia, "Nenhuma continha encontrada")
+        self.assertNotContains(PaginaVazia, "Abrir atendimento")
+
+        ContaCliente.objects.create(Proprietario=self.Usuario, NomeCliente="Cliente teste")
+        PaginaComConta = self.client.get("/continhas")
+        self.assertContains(PaginaComConta, "Cliente teste")
+        self.assertNotContains(PaginaComConta, "Abrir atendimento")
 
     def test_CompraPodeSerLancadaNaContinhaDoCliente(self):
         self.client.post(

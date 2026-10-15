@@ -6,17 +6,19 @@ from django.http import HttpResponse
 from django.middleware.csrf import get_token as ObterTokenCsrf
 
 from componentes.LayoutBase import RenderizarLayoutBase
+from componentes.BuscaIncremental import ObterScriptBuscaIncremental
 from features.vendas.ComponenteCarrinho import ConsumirMensagem
-from features.vendas.LogicaCarrinho import NumerosCarrinhos
+from features.vendas.ComponenteLeitorCodigoBarras import ObterComplementoLeitorCodigoBarras
+from features.vendas.LogicaCarrinho import ObterNumerosCarrinhos
 
 from .LogicaPaginaPrincipal import GerarDadosPaginaPrincipal
 
 
 def ObterCarrinhosAbertos(Request):
-    return list(NumerosCarrinhos)
+    return ObterNumerosCarrinhos(Request)
 
 
-def RenderizarCartoesCarrinhos(ResumosCarrinhos, CarrinhosAbertos):
+def RenderizarCartoesCarrinhos(ResumosCarrinhos, CarrinhosAbertos, TokenCsrf):
     return "".join(
         f"""
         <article class="CartaoAtendimento">
@@ -28,8 +30,8 @@ def RenderizarCartoesCarrinhos(ResumosCarrinhos, CarrinhosAbertos):
                 aria-expanded="{'true' if Resumo['Numero'] in CarrinhosAbertos else 'false'}"
             >
                 <span>{escape(Resumo['Nome'])}</span>
-                <strong>R$ {Resumo['TotalFormatado']}</strong>
-                <small>{Resumo['QuantidadeProdutos']} produtos</small>
+                <strong data-resumo-carrinho="{Resumo['Numero']}" data-parte-resumo="card-total">R$ {Resumo['TotalFormatado']}</strong>
+                <small data-resumo-carrinho="{Resumo['Numero']}" data-parte-resumo="card-quantidade">{Resumo['QuantidadeProdutos']} produtos</small>
             </button>
             <button
                 class="BotaoEditarNomeCarrinho"
@@ -40,6 +42,13 @@ def RenderizarCartoesCarrinhos(ResumosCarrinhos, CarrinhosAbertos):
                 aria-label="Editar nome do carrinho {Resumo['Numero']}"
                 title="Editar nome do cliente"
             >&#9998;</button>
+            <form class="FormularioFecharCarrinho" method="post" action="/carrinho/fechar"
+                data-confirmar-fechamento data-cliente-identificado="{'true' if Resumo['NomePersonalizado'] else 'false'}">
+                <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
+                <input type="hidden" name="carrinho" value="{Resumo['Numero']}">
+                <input type="hidden" name="retorno" value="pagina-principal">
+                <button class="BotaoFecharCarrinho" type="submit" aria-label="Fechar carrinho {Resumo['Numero']}" title="Fechar carrinho">&times;</button>
+            </form>
         </article>
         """
         for Resumo in ResumosCarrinhos
@@ -132,7 +141,7 @@ def RenderizarPagamentoPainel(ResumoCarrinho, TokenCsrf, CarrinhosAbertos):
                 </label>
                 <label>
                     <input type="radio" name="forma_pagamento" value="conta_cliente">
-                    Conta do cliente
+                    Conta
                 </label>
             </fieldset>
 
@@ -212,26 +221,33 @@ def RenderizarPaineisCarrinhos(
                 </header>
 
                 <section class="AdicionarProdutoPainel">
-                    <label for="BuscaCarrinho-{Numero}">Adicionar produtos</label>
-                    <input
-                        id="BuscaCarrinho-{Numero}"
-                        class="CampoFormulario"
-                        type="search"
-                        placeholder="Pesquisar arroz, feijão..."
-                        autocomplete="off"
-                        data-busca-produto="{Numero}"
-                    >
+                    <form class="BuscaUnificadaCarrinho" method="get" action="/" data-leitor-codigo="{Numero}" data-token-csrf="{TokenCsrf}">
+                        <input type="hidden" name="carrinho" value="{Numero}">
+                        <label for="BuscaCarrinho-{Numero}">Adicionar produtos</label>
+                        <input
+                            id="BuscaCarrinho-{Numero}"
+                            class="CampoFormulario"
+                            type="search"
+                            name="busca_carrinho"
+                            placeholder="Produto ou código de barras"
+                            autocomplete="off"
+                            spellcheck="false"
+                            data-busca-produto="{Numero}"
+                            data-campo-leitor
+                        >
+                    </form>
+                    <p class="MensagemLeitorCodigo" data-mensagem-leitor="{Numero}" role="status"></p>
                     <div class="ResultadosPainel" data-resultados-produtos="{Numero}"></div>
                 </section>
 
-                {ItensPainel}
+                <div data-resumo-carrinho="{Numero}" data-parte-resumo="itens">{ItensPainel}</div>
 
                 <div class="TotalPainelCarrinho">
                     <span>Total</span>
-                    <strong>R$ {Resumo['TotalFormatado']}</strong>
+                    <strong data-resumo-carrinho="{Numero}" data-parte-resumo="total">R$ {Resumo['TotalFormatado']}</strong>
                 </div>
 
-                {PagamentoPainel}
+                <div data-resumo-carrinho="{Numero}" data-parte-resumo="pagamento">{PagamentoPainel}</div>
                 <a class="LinkCarrinhoCompleto" href="/carrinho?carrinho={Numero}">Abrir carrinho completo</a>
             </aside>
             """
@@ -299,9 +315,20 @@ def ObterEstilosPaginaPrincipal():
         .TituloSecao h2 { margin: 0; }
         .TituloSecao span { color: #667482; font-size: 13px; }
 
+        .AcoesAtendimentos { display: flex; align-items: center; gap: 14px; }
+        .AcoesAtendimentos form { margin: 0; }
+        .BotaoAbrirCarrinho {
+            width: 42px; height: 42px; padding: 0;
+            border: 1px solid #0784ca; border-radius: 4px;
+            background: #0784ca; color: white; font-size: 28px; cursor: pointer;
+        }
+        .BotaoAbrirCarrinho:hover { background: #056da8; }
+        .BotaoAbrirCarrinho:focus-visible { outline: 2px solid #26313d; outline-offset: 2px; }
+        .AreaAtendimentos { max-width: 100%; overflow-x: auto; padding: 2px 2px 14px; }
+
         .GradeAtendimentos {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(var(--QuantidadeCarrinhos), minmax(320px, 1fr));
             gap: 14px;
         }
 
@@ -313,7 +340,7 @@ def ObterEstilosPaginaPrincipal():
         .ConteudoCartaoAtendimento {
             width: 100%;
             min-height: 104px;
-            padding: 17px 54px 17px 17px;
+            padding: 17px 90px 17px 17px;
             display: grid;
             align-content: center;
             gap: 6px;
@@ -347,7 +374,7 @@ def ObterEstilosPaginaPrincipal():
             position: absolute;
             z-index: 1;
             top: 12px;
-            right: 12px;
+            right: 50px;
             width: 34px;
             height: 34px;
             border: 1px solid #cad8e1;
@@ -365,6 +392,14 @@ def ObterEstilosPaginaPrincipal():
             outline: 2px solid rgba(7, 132, 202, 0.15);
         }
 
+        .CartaoAtendimento > .FormularioFecharCarrinho { position: absolute; top: 12px; right: 10px; margin: 0; }
+        .BotaoFecharCarrinho {
+            width: 34px; height: 34px; padding: 0;
+            border: 1px solid #cad8e1; border-radius: 4px;
+            color: #52616f; background: #f4f8fa; font-size: 24px; cursor: pointer;
+        }
+        .BotaoFecharCarrinho:hover { color: #9b2635; background: #fbecef; border-color: #9b2635; }
+
         .ConsultaEstoqueCabecalho {
             margin-bottom: 14px;
             display: flex;
@@ -379,9 +414,8 @@ def ObterEstilosPaginaPrincipal():
         .AreaPaineisCarrinhos {
             width: 100%;
             margin-top: 14px;
-            padding: 2px 2px 14px;
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(var(--QuantidadeCarrinhos), minmax(320px, 1fr));
             align-items: start;
             gap: 14px;
         }
@@ -443,13 +477,15 @@ def ObterEstilosPaginaPrincipal():
         }
 
         .AdicionarProdutoPainel { padding: 15px; border-bottom: 1px solid #e0e7eb; }
-        .AdicionarProdutoPainel > label {
+        .AdicionarProdutoPainel .BuscaUnificadaCarrinho > label {
             display: block;
             margin-bottom: 7px;
             color: #3f4f5f;
             font-size: 13px;
             font-weight: 700;
         }
+
+        .AdicionarProdutoPainel [data-campo-leitor] { width: 100%; }
 
         .ResultadosPainel { display: grid; gap: 7px; }
         .ResultadoProdutoPainel {
@@ -605,9 +641,11 @@ def ObterEstilosPaginaPrincipal():
         [hidden] { display: none !important; }
 
         @media (max-width: 760px) {
-            .GradeAtendimentos { grid-template-columns: 1fr; }
-            .AreaPaineisCarrinhos { grid-template-columns: 1fr; }
+            .GradeAtendimentos,
+            .AreaPaineisCarrinhos { grid-template-columns: repeat(var(--QuantidadeCarrinhos), minmax(min(320px, 100%), 1fr)); }
             .TituloSecao { align-items: flex-start; flex-direction: column; gap: 4px; }
+            .TituloAtendimentos { flex-direction: row; align-items: center; gap: 12px; }
+            .AcoesAtendimentos > span { display: none; }
             .ConsultaEstoqueCabecalho { align-items: stretch; flex-direction: column; }
             .PainelCarrinhoFlutuante {
                 max-height: 560px;
@@ -637,7 +675,7 @@ def ObterScriptPaginaPrincipal(
                 .replace(/[\u0300-\u036f]/g, "")
                 .toLowerCase();
 
-            const ObterListaAbertos = () => Array.from(Abertos).sort().join(",");
+            const ObterListaAbertos = () => Array.from(Abertos).join(",");
 
             const AtualizarCamposAbertos = () => {
                 const Valor = ObterListaAbertos();
@@ -724,7 +762,7 @@ def ObterScriptPaginaPrincipal(
 
                 const TermoNormalizado = Normalizar(Termo);
                 const Encontrados = Produtos.filter((Produto) =>
-                    Normalizar(`${Produto.Nome} ${Produto.Categoria} ${Produto.Marca} ${Produto.Fornecedor}`).includes(TermoNormalizado)
+                    Normalizar(`${Produto.Nome} ${Produto.Categoria} ${Produto.Marca} ${Produto.Fornecedor} ${Produto.CodigoBarras}`).includes(TermoNormalizado)
                 ).slice(0, 8);
 
                 if (!Encontrados.length) {
@@ -767,14 +805,23 @@ def ObterScriptPaginaPrincipal(
             });
 
             document.querySelectorAll("[data-busca-produto]").forEach((Campo) => {
-                Campo.addEventListener("input", () => RenderizarResultados(Campo.dataset.buscaProduto));
+                Campo.addEventListener("input", () => {
+                    RenderizarResultados(Campo.dataset.buscaProduto);
+                    const Endereco = new URL(window.location.href);
+                    Endereco.searchParams.set("carrinho", Campo.dataset.buscaProduto);
+                    if (Campo.value.trim()) Endereco.searchParams.set("busca_carrinho", Campo.value.trim());
+                    else Endereco.searchParams.delete("busca_carrinho");
+                    window.history.replaceState(null, "", Endereco.toString());
+                });
             });
 
             document.querySelectorAll("form").forEach((Formulario) => {
                 Formulario.addEventListener("submit", AtualizarCamposAbertos);
             });
 
-            document.querySelectorAll("[data-formulario-pagamento]").forEach((Formulario) => {
+            const InicializarPagamentos = () => document.querySelectorAll("[data-formulario-pagamento]").forEach((Formulario) => {
+                if (Formulario.dataset.inicializado) return;
+                Formulario.dataset.inicializado = "true";
                 const Total = Number(Formulario.dataset.total);
                 const AreaDinheiro = Formulario.querySelector("[data-area-dinheiro]");
                 const ValorRecebido = Formulario.querySelector("[data-valor-recebido]");
@@ -811,6 +858,8 @@ def ObterScriptPaginaPrincipal(
                 ValorRecebido.addEventListener("input", AtualizarTroco);
                 AtualizarPagamento();
             });
+            InicializarPagamentos();
+            document.addEventListener("carrinhos-atualizados", InicializarPagamentos);
 
             const CarrinhoPesquisado = __CARRINHO_PESQUISADO__;
             const BuscaInicial = __BUSCA_CARRINHO__;
@@ -823,6 +872,23 @@ def ObterScriptPaginaPrincipal(
             }
 
             AtualizarPaineis();
+            document.querySelectorAll("[data-confirmar-fechamento]").forEach((Formulario) => {
+                Formulario.addEventListener("submit", (Evento) => {
+                    const Contador = document.querySelector(`[data-resumo-carrinho="${Formulario.elements.carrinho.value}"][data-parte-resumo="card-quantidade"]`);
+                    const Ocupado = Number.parseInt(Contador?.textContent || "0", 10) > 0 || Formulario.dataset.clienteIdentificado === "true";
+                    if (Ocupado && !window.confirm("Fechar este carrinho e descartar o atendimento? Os itens e o nome do cliente serão removidos.")) Evento.preventDefault();
+                });
+            });
+            if (Abertos.has(CarrinhoPesquisado)) {
+                const Area = document.querySelector(".AreaAtendimentos");
+                const Painel = document.getElementById(`PainelCarrinho-${CarrinhoPesquisado}`);
+                const ExibirCarrinhoSelecionado = () => {
+                    Area.scrollLeft += Painel.getBoundingClientRect().left - Area.getBoundingClientRect().left - 2;
+                };
+                ExibirCarrinhoSelecionado();
+                window.addEventListener("resize", ExibirCarrinhoSelecionado);
+                Painel.querySelector("[data-busca-produto]").focus({ preventScroll: true });
+            }
         })();
     </script>
     """
@@ -859,7 +925,10 @@ def ComponentePaginaPrincipal(Request):
     CartoesCarrinhos = RenderizarCartoesCarrinhos(
         DadosPagina["ResumosCarrinhos"],
         CarrinhosAbertos,
+        TokenCsrf,
     )
+    if not CarrinhosAbertos:
+        CartoesCarrinhos = '<p>Nenhum carrinho aberto.</p>'
     PaineisCarrinhos = RenderizarPaineisCarrinhos(
         DadosPagina["ResumosCarrinhos"],
         CarrinhosAbertos,
@@ -870,6 +939,7 @@ def ComponentePaginaPrincipal(Request):
         {
             "Id": ProdutoEstoque["Id"],
             "Nome": ProdutoEstoque["Nome"],
+            "CodigoBarras": ProdutoEstoque["CodigoBarras"],
             "Categoria": ProdutoEstoque["Categoria"],
             "Marca": ProdutoEstoque["Marca"],
             "Fornecedor": ", ".join(dict.fromkeys(
@@ -914,8 +984,16 @@ def ComponentePaginaPrincipal(Request):
 
     <div class="TituloSecao TituloAtendimentos">
         <h2>Atendimentos em andamento</h2>
-        <span>Carrinhos sempre abertos</span>
+        <div class="AcoesAtendimentos">
+            <span>Carrinhos sempre abertos</span>
+            <form method="post" action="/carrinho/abrir">
+                <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
+                <input type="hidden" name="retorno" value="pagina-principal">
+                <button class="BotaoAbrirCarrinho" type="submit" aria-label="Abrir novo carrinho" title="Abrir novo carrinho">+</button>
+            </form>
+        </div>
     </div>
+    <div class="AreaAtendimentos" style="--QuantidadeCarrinhos: {max(len(CarrinhosAbertos), 1)}">
     <section class="GradeAtendimentos" aria-label="Carrinhos em atendimento">
         {CartoesCarrinhos}
     </section>
@@ -926,6 +1004,7 @@ def ComponentePaginaPrincipal(Request):
         aria-label="Carrinhos abertos"
     >
         {PaineisCarrinhos}
+    </div>
     </div>
 
     <dialog class="DialogoNomeCarrinho" id="DialogoNomeCarrinho">
@@ -983,20 +1062,27 @@ def ComponentePaginaPrincipal(Request):
 
     <div class="ConsultaEstoqueCabecalho">
         <h2>Consulta do estoque</h2>
-        <form class="BarraFiltros" method="get" action="/">
+        <form class="BarraFiltros" id="FormularioConsultaEstoque" method="get" action="/">
             <input type="hidden" name="carrinhos_abertos" value="{NumerosAbertos}">
+            <input type="hidden" name="inicio" value="1">
             <input
+                id="BuscaConsultaEstoque"
                 class="CampoFormulario"
                 type="search"
                 name="busca"
                 value="{escape(BuscaEstoque)}"
-                placeholder="Produto, categoria, marca ou fornecedor"
+                placeholder="Nome do produto ou código de barras"
                 aria-label="Pesquisar no estoque"
+                autocomplete="off"
+                spellcheck="false"
             >
             <button class="BotaoPrimario" type="submit">Pesquisar</button>
         </form>
     </div>
-    {TabelaEstoque}
+    <p id="ErroConsultaEstoque" role="status" hidden>Não foi possível pesquisar agora. Tente novamente.</p>
+    <div id="ResultadosConsultaEstoque" aria-live="polite">
+        {TabelaEstoque}
+    </div>
 
     {ScriptPagina}
     """
@@ -1004,7 +1090,11 @@ def ComponentePaginaPrincipal(Request):
     return HttpResponse(
         RenderizarLayoutBase(
             "Página Principal",
-            ConteudoPrincipal,
+            ConteudoPrincipal + ObterScriptBuscaIncremental(
+                "FormularioConsultaEstoque", "BuscaConsultaEstoque", "ResultadosConsultaEstoque", "ErroConsultaEstoque",
+            ) + ObterComplementoLeitorCodigoBarras(
+                CarrinhoPesquisado if CarrinhoPesquisado in CarrinhosAbertos else "1"
+            ),
             RotaAtiva="pagina-principal",
         )
     )

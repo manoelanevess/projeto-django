@@ -2,6 +2,7 @@
 from django.db.models import F, Prefetch, Q
 
 from .models import LoteEstoque, Produto
+from .LogicaCodigoBarras import NormalizarCodigoBarras
 
 
 def ObterPrefetchLotesAtivos():
@@ -36,6 +37,7 @@ def MontarFiltroProdutosDisponiveis():
 def MontarFiltroBuscaProdutos(Busca):
     return (
         Q(Nome__unaccent__icontains=Busca)
+        | Q(CodigoBarras__icontains=Busca)
         | Q(Categoria__unaccent__icontains=Busca)
         | Q(Marca__unaccent__icontains=Busca)
         | Q(Fornecedor__Nome__unaccent__icontains=Busca)
@@ -46,7 +48,17 @@ def MontarFiltroBuscaProdutos(Busca):
     )
 
 
-def BuscarProdutos(Busca="", Estoque="", Categoria="", Fornecedor=""):
+def BuscarProdutoPorCodigoBarras(Codigo):
+    CodigoNormalizado = NormalizarCodigoBarras(Codigo, Obrigatorio=True)
+    return (
+        Produto.objects.select_related("Fornecedor")
+        .prefetch_related(ObterPrefetchLotesAtivos())
+        .filter(CodigoBarras=CodigoNormalizado)
+        .first()
+    )
+
+
+def BuscarProdutos(Busca="", Estoque="", Categoria="", Fornecedor="", BuscaPorInicio=False):
     Produtos = (
         Produto.objects.filter(Ativo=True)
         .select_related("Fornecedor")
@@ -54,7 +66,11 @@ def BuscarProdutos(Busca="", Estoque="", Categoria="", Fornecedor=""):
     )
 
     if Busca:
-        Produtos = Produtos.filter(MontarFiltroBuscaProdutos(Busca))
+        FiltroBusca = (
+            Q(Nome__unaccent__istartswith=Busca) | Q(CodigoBarras__startswith=Busca)
+            if BuscaPorInicio else MontarFiltroBuscaProdutos(Busca)
+        )
+        Produtos = Produtos.filter(FiltroBusca)
 
     if Categoria:
         Produtos = Produtos.filter(Categoria__iexact=Categoria)

@@ -5,6 +5,7 @@ from django.http import HttpResponse
 from django.middleware.csrf import get_token as ObterTokenCsrf
 
 from componentes.LayoutBase import RenderizarLayoutBase
+from componentes.BuscaIncremental import ObterScriptBuscaIncremental
 from features.fornecedor.ApiFornecedor import BuscarFornecedoresParaFiltroEstoque
 from features.produtos.ApiProduto import BuscarCategoriasProdutos
 from features.produtos.ComponenteProduto import ConsumirMensagemProduto
@@ -154,6 +155,7 @@ def ComponenteEstoque(Request):
         Estoque=Estoque,
         Categoria=Categoria,
         Fornecedor=Fornecedor,
+        BuscaPorInicio=Request.GET.get("inicio") == "1",
     )
     TokenCsrf = ObterTokenCsrf(Request)
     ProdutosHtml = RenderizarProdutos(ResumoProdutos["Produtos"], TokenCsrf)
@@ -198,9 +200,13 @@ def ComponenteEstoque(Request):
         .CabecalhoEstoque h1 {{ margin: 0; }}
         .BarraFiltrosEstoque {{
             display: grid;
-            grid-template-columns: minmax(200px, 1fr) 195px 215px 180px auto auto;
+            grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+            align-items: start;
         }}
         .BarraFiltrosEstoque .CampoFormulario {{ min-width: 0; width: 100%; }}
+        .BuscaUnificadaEstoque {{ grid-column: 1 / -1; display: grid; gap: 6px; min-width: 0; }}
+        .BuscaUnificadaEstoque label {{ font-size: 13px; font-weight: 700; color: #43576a; }}
+        .AcoesFiltrosEstoque {{ display: flex; flex-wrap: wrap; gap: 10px; }}
 
         .MensagemOperacao {{
             margin-bottom: 18px;
@@ -211,7 +217,7 @@ def ComponenteEstoque(Request):
         .MensagemOperacao.Sucesso {{ border-color: #14866d; color: #0c614f; background: #e7f7f2; }}
         .MensagemOperacao.Erro {{ border-color: #c53b32; color: #8b241e; background: #fff0ef; }}
 
-        .TabelaEstoque {{ overflow-x: auto; }}
+        .TabelaEstoque {{ overflow-x: auto; position: relative; }}
         .TabelaEstoque table {{ min-width: 1060px; }}
         .DadosProduto strong,
         .DadosProduto small,
@@ -263,6 +269,13 @@ def ComponenteEstoque(Request):
             white-space: nowrap;
             border: 0;
         }}
+        @media (max-width: 1000px) {{
+            .BarraFiltrosEstoque {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+        }}
+        @media (max-width: 620px) {{
+            .CabecalhoEstoque {{ flex-direction: column; align-items: stretch; }}
+            .BarraFiltrosEstoque {{ grid-template-columns: minmax(0, 1fr); }}
+        }}
     </style>
 
     <div class="CabecalhoEstoque">
@@ -272,15 +285,22 @@ def ComponenteEstoque(Request):
 
     {MensagemHtml}
 
-    <form class="BarraFiltros BarraFiltrosEstoque" method="get" action="/estoque">
-        <input
-            class="CampoFormulario"
-            type="search"
-            name="busca"
-            value="{escape(Busca)}"
-            placeholder="Produto, marca ou fornecedor"
-            aria-label="Buscar produto, marca ou fornecedor"
-        >
+    <form class="BarraFiltros BarraFiltrosEstoque" id="FormularioBuscaEstoque" method="get" action="/estoque">
+        <input type="hidden" name="inicio" value="1">
+        <div class="BuscaUnificadaEstoque">
+            <label for="BuscaProdutoEstoque">Produto ou código de barras</label>
+            <input
+                id="BuscaProdutoEstoque"
+                class="CampoFormulario"
+                type="search"
+                name="busca"
+                value="{escape(Busca)}"
+                placeholder="Nome do produto ou código de barras"
+                autocomplete="off"
+                spellcheck="false"
+                autofocus
+            >
+        </div>
         <select class="CampoFormulario" name="categoria" aria-label="Filtrar por categoria">
             {OpcoesCategorias}
         </select>
@@ -290,10 +310,14 @@ def ComponenteEstoque(Request):
         <select class="CampoFormulario" name="estoque" aria-label="Filtrar pela situação do estoque">
             {OpcoesEstoqueHtml}
         </select>
-        <button class="BotaoPrimario" type="submit">Filtrar</button>
-        <a class="BotaoSecundario" href="/estoque">Limpar</a>
+        <div class="AcoesFiltrosEstoque">
+            <button class="BotaoPrimario" type="submit">Filtrar</button>
+            <a class="BotaoSecundario" href="/estoque">Limpar</a>
+        </div>
     </form>
 
+    <p class="MensagemOperacao Erro" id="ErroBuscaEstoque" role="status" hidden>Não foi possível pesquisar agora. Tente novamente.</p>
+    <div id="ResultadosEstoque" aria-live="polite">
     <section class="GridIndicadores" aria-label="Indicadores do estoque">
         <article class="CardIndicador" style="--CorDestaque: #2d74d8;">
             <div>
@@ -321,8 +345,33 @@ def ComponenteEstoque(Request):
     </section>
 
     {ProdutosHtml}
+    </div>
+    <script>
+        (() => {{
+            const Formulario = document.getElementById("FormularioBuscaEstoque");
+            const Campo = document.getElementById("BuscaProdutoEstoque");
+            Campo.addEventListener("keydown", (Evento) => {{
+                if (Evento.key !== "Enter" || Evento.isComposing) return;
+                Evento.preventDefault();
+                if (Evento.repeat) return;
+                Formulario.dispatchEvent(new Event("cancelar-busca-incremental"));
+                const Codigo = Campo.value.trim();
+                if (!Codigo) {{
+                    Formulario.requestSubmit();
+                    return;
+                }}
+                const Parametros = new URLSearchParams(new FormData(Formulario));
+                Parametros.delete("busca");
+                Parametros.set("codigo", Codigo);
+                Parametros.set("permitir_pesquisa", "1");
+                window.location.assign(`/estoque/ler-codigo?${{Parametros}}`);
+            }});
+        }})();
+    </script>
     """
 
     return HttpResponse(
-        RenderizarLayoutBase("Estoque", ConteudoPrincipal, RotaAtiva="estoque")
+        RenderizarLayoutBase("Estoque", ConteudoPrincipal + ObterScriptBuscaIncremental(
+            "FormularioBuscaEstoque", "BuscaProdutoEstoque", "ResultadosEstoque", "ErroBuscaEstoque",
+        ), RotaAtiva="estoque")
     )

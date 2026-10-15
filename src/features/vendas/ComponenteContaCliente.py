@@ -140,7 +140,6 @@ def RenderizarContinhas(Contas):
         <section class="EstadoVazio">
             <h2>Nenhuma continha encontrada</h2>
             <p>As compras lançadas na conta do cliente aparecerão aqui.</p>
-            <a class="BotaoPrimario" href="/">Abrir atendimento</a>
         </section>
         """
 
@@ -224,7 +223,6 @@ def ComponenteContinhasClientes(Request):
 
     <div class="CabecalhoContinhas">
         <h1>Continhas dos clientes</h1>
-        <a class="BotaoSecundario" href="/">Abrir atendimento</a>
     </div>
 
     <form class="BarraFiltros" method="get" action="/continhas" id="FormularioBuscaContinhas">

@@ -19,28 +19,31 @@ from features.produtos.LogicaProduto import FormatarQuantidade, FormatarValorMoe
 from .LogicaCarrinho import (
     AdicionarProdutoAoCarrinho,
     ConcluirVenda,
+    CriarCarrinhoSessao,
     DefinirNomeCarrinho,
+    FecharCarrinhoSessao,
     LimparCarrinho,
     MontarResumosCarrinhos,
-    NumerosCarrinhos,
+    ObterNumerosCarrinhos,
     RemoverProdutoDoCarrinho,
     ValidarNumeroCarrinho,
 )
+from .ComponenteLeitorCodigoBarras import ObterComplementoLeitorCodigoBarras
 
 
 ChaveMensagemCarrinho = "MensagemCarrinho"
 
 
-def ObterNumeroCarrinhoSeguro(Valor):
+def ObterNumeroCarrinhoSeguro(Request, Valor):
     try:
-        return ValidarNumeroCarrinho(Valor)
+        return ValidarNumeroCarrinho(Valor, Request)
     except ValueError:
-        return "1"
+        return next(iter(ObterNumerosCarrinhos(Request)), None)
 
 
 def ObterNumeroCarrinhoDaAcao(Request):
     try:
-        return ValidarNumeroCarrinho(Request.POST.get("carrinho"))
+        return ValidarNumeroCarrinho(Request.POST.get("carrinho"), Request)
     except ValueError as Erro:
         DefinirMensagem(Request, str(Erro), Tipo="erro")
         return None
@@ -70,7 +73,7 @@ def RedirecionarAposAcao(Request, NumeroCarrinho, Busca=""):
     if Request.POST.get("retorno") != "pagina-principal":
         return RedirecionarParaCarrinho(NumeroCarrinho, Busca)
 
-    CarrinhosAbertos = list(NumerosCarrinhos)
+    CarrinhosAbertos = ObterNumerosCarrinhos(Request)
 
     Parametros = {
         "carrinho": NumeroCarrinho,
@@ -83,17 +86,26 @@ def RedirecionarAposAcao(Request, NumeroCarrinho, Busca=""):
     return Redirecionar(f"/?{urlencode(Parametros)}")
 
 
-def RenderizarAbasCarrinhos(ResumosCarrinhos, NumeroSelecionado):
+def RenderizarAbasCarrinhos(ResumosCarrinhos, NumeroSelecionado, TokenCsrf):
     return "".join(
         f"""
+        <div class="ItemAbaCarrinho">
         <a
             class="AbaCarrinho{' Ativa' if Resumo['Numero'] == NumeroSelecionado else ''}"
             href="/carrinho?carrinho={Resumo['Numero']}"
             {'aria-current="page"' if Resumo['Numero'] == NumeroSelecionado else ''}
         >
             <span>{escape(Resumo['Nome'])}</span>
-            <strong>{Resumo['QuantidadeProdutos']}</strong>
+            <strong data-resumo-carrinho="{Resumo['Numero']}" data-parte-resumo="aba-quantidade">{Resumo['QuantidadeProdutos']}</strong>
         </a>
+        <form method="post" action="/carrinho/fechar" class="FormularioFecharCarrinho"
+            data-confirmar-fechamento data-cliente-identificado="{'true' if Resumo['NomePersonalizado'] else 'false'}">
+            <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
+            <input type="hidden" name="carrinho" value="{Resumo['Numero']}">
+            <input type="hidden" name="carrinho_selecionado" value="{NumeroSelecionado}">
+            <button class="BotaoFecharCarrinho" type="submit" aria-label="Fechar carrinho {Resumo['Numero']}" title="Fechar carrinho">&times;</button>
+        </form>
+        </div>
         """
         for Resumo in ResumosCarrinhos
     )
@@ -268,7 +280,7 @@ def RenderizarPagamento(ResumoCarrinho, TokenCsrf, NumeroCarrinho):
     return f"""
     <section class="PagamentoVenda" aria-labelledby="TituloPagamento">
         <h2 id="TituloPagamento">Pagamento</h2>
-        <form method="post" action="/carrinho/concluir" id="FormularioPagamento">
+        <form method="post" action="/carrinho/concluir" id="FormularioPagamento" data-total="{ResumoCarrinho['Total']}">
             <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
             <input type="hidden" name="carrinho" value="{NumeroCarrinho}">
 
@@ -284,7 +296,7 @@ def RenderizarPagamento(ResumoCarrinho, TokenCsrf, NumeroCarrinho):
                 </label>
                 <label>
                     <input type="radio" name="forma_pagamento" value="conta_cliente">
-                    Conta do cliente
+                    Conta
                 </label>
             </fieldset>
 
@@ -321,7 +333,18 @@ def RenderizarPagamento(ResumoCarrinho, TokenCsrf, NumeroCarrinho):
 
 
 def ComponenteCarrinho(Request):
-    NumeroCarrinho = ObterNumeroCarrinhoSeguro(Request.GET.get("carrinho", "1"))
+    NumeroCarrinho = ObterNumeroCarrinhoSeguro(Request, Request.GET.get("carrinho", "1"))
+    if NumeroCarrinho is None:
+        TokenCsrf = escape(ObterTokenCsrf(Request))
+        return HttpResponse(RenderizarLayoutBase("Carrinhos", f"""
+            <h1>Carrinhos</h1>
+            <p>Nenhum carrinho aberto.</p>
+            <form method="post" action="/carrinho/abrir">
+                <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
+                <button class="BotaoPrimario" type="submit" aria-label="Abrir novo carrinho" title="Abrir novo carrinho"
+                    style="width: 42px; height: 42px; padding: 0; font-size: 28px">+</button>
+            </form>
+        """, RotaAtiva="carrinho"))
     Busca = Request.GET.get("busca", "").strip()
     BuscaSegura = escape(Busca)
     TokenCsrf = escape(ObterTokenCsrf(Request))
@@ -342,7 +365,7 @@ def ComponenteCarrinho(Request):
             f'{escape(Mensagem["Texto"])}</div>'
         )
 
-    AbasCarrinhos = RenderizarAbasCarrinhos(ResumosCarrinhos, NumeroCarrinho)
+    AbasCarrinhos = RenderizarAbasCarrinhos(ResumosCarrinhos, NumeroCarrinho, TokenCsrf)
     ResultadosBusca = RenderizarResultadosBusca(
         ProdutosEncontrados,
         TokenCsrf,
@@ -374,12 +397,33 @@ def ComponenteCarrinho(Request):
 
         .AbasCarrinhos {{
             margin-bottom: 24px;
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            display: flex;
+            align-items: center;
+            gap: 12px;
             border-bottom: 1px solid #cbd6df;
         }}
 
+        .ListaAbasCarrinhos {{ display: flex; flex: 1; min-width: 0; overflow-x: auto; }}
+        .ItemAbaCarrinho {{ flex: 1 0 190px; min-width: 0; display: flex; align-items: center; }}
+        .FormularioFecharCarrinho {{ margin: 0; flex: 0 0 auto; }}
+        .BotaoFecharCarrinho {{
+            width: 30px; height: 30px; padding: 0; border: 0; border-radius: 4px;
+            background: transparent; color: #52616f; font-size: 23px; cursor: pointer;
+        }}
+        .BotaoFecharCarrinho:hover {{ color: #9b2635; background: #fbecef; }}
+        .AbrirCarrinho {{ flex: 0 0 auto; margin: 0; }}
+        .BotaoAbrirCarrinho {{
+            width: 42px; height: 42px; padding: 0;
+            border: 1px solid #0784ca; border-radius: 4px;
+            background: #0784ca; color: white; font-size: 28px; cursor: pointer;
+        }}
+        .BotaoAbrirCarrinho:hover {{ background: #056da8; }}
+        .BotaoAbrirCarrinho:focus-visible {{ outline: 2px solid #26313d; outline-offset: 2px; }}
+
         .AbaCarrinho {{
+            flex: 1;
+            min-width: 0;
+            max-width: 100%;
             min-height: 52px;
             padding: 0 16px;
             display: flex;
@@ -391,6 +435,8 @@ def ComponenteCarrinho(Request):
             text-decoration: none;
             font-weight: 700;
         }}
+
+        .AbaCarrinho span {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
 
         .AbaCarrinho strong {{
             min-width: 26px;
@@ -422,7 +468,7 @@ def ComponenteCarrinho(Request):
 
         .BuscaVenda {{ min-width: 0; }}
 
-        .BuscaVenda form.BarraFiltros {{ margin-bottom: 16px; }}
+        .BuscaVenda form.BarraFiltros {{ margin-bottom: 0; }}
 
         .ListaResultadosVenda {{ display: grid; gap: 10px; }}
 
@@ -476,6 +522,7 @@ def ComponenteCarrinho(Request):
         .EstadoBuscaVenda p {{ color: #667482; }}
 
         .ResumoCarrinho {{
+            min-width: 0;
             padding: 20px;
             border: 1px solid #d6e0e6;
             border-radius: 6px;
@@ -555,7 +602,7 @@ def ComponenteCarrinho(Request):
         }}
         .AcoesDialogoNome button {{ min-height: 40px; }}
 
-        .TabelaCarrinho {{ overflow-x: auto; }}
+        .TabelaCarrinho {{ position: relative; overflow-x: auto; }}
         .TabelaCarrinho table {{ box-shadow: none; }}
         .TabelaCarrinho td {{ padding: 11px 6px; }}
         .TabelaCarrinho td strong,
@@ -698,13 +745,14 @@ def ComponenteCarrinho(Request):
         }}
 
         @media (max-width: 900px) {{
-            .GradeVenda {{ grid-template-columns: 1fr; }}
+            .GradeVenda {{ grid-template-columns: minmax(0, 1fr); }}
             .ResumoCarrinho {{ order: -1; }}
         }}
 
         @media (max-width: 620px) {{
             .CabecalhoCarrinho {{ align-items: stretch; flex-direction: column; }}
             .AbaCarrinho {{ padding: 0 8px; flex-direction: column; gap: 3px; font-size: 12px; }}
+            .OpcoesPagamento {{ grid-template-columns: 1fr; }}
             .ProdutoResultado {{ grid-template-columns: 1fr; }}
             .FormularioAdicionar {{ grid-template-columns: minmax(90px, 1fr) minmax(104px, 1fr); }}
         }}
@@ -716,7 +764,11 @@ def ComponenteCarrinho(Request):
     </div>
 
     <nav class="AbasCarrinhos" aria-label="Carrinhos em atendimento">
-        {AbasCarrinhos}
+        <div class="ListaAbasCarrinhos">{AbasCarrinhos}</div>
+        <form class="AbrirCarrinho" method="post" action="/carrinho/abrir">
+            <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
+            <button class="BotaoAbrirCarrinho" type="submit" aria-label="Abrir novo carrinho" title="Abrir novo carrinho">+</button>
+        </form>
     </nav>
 
     {HtmlMensagem}
@@ -724,7 +776,7 @@ def ComponenteCarrinho(Request):
     <div class="GradeVenda">
         <section class="BuscaVenda" aria-labelledby="TituloBuscaVenda">
             <h2 id="TituloBuscaVenda">Adicionar produtos</h2>
-            <form class="BarraFiltros" id="FormularioBuscaCarrinho" method="get" action="/carrinho">
+            <form class="BarraFiltros BuscaUnificadaCarrinho" id="FormularioBuscaCarrinho" method="get" action="/carrinho" data-leitor-codigo="{NumeroCarrinho}" data-token-csrf="{TokenCsrf}">
                 <input type="hidden" name="carrinho" value="{NumeroCarrinho}">
                 <input
                     id="BuscaProdutoCarrinho"
@@ -732,13 +784,15 @@ def ComponenteCarrinho(Request):
                     type="search"
                     name="busca"
                     value="{BuscaSegura}"
-                    placeholder="Produto, categoria, marca ou fornecedor"
-                    aria-label="Pesquisar produto, categoria, marca ou fornecedor"
+                    placeholder="Produto ou código de barras"
+                    aria-label="Pesquisar produto, código de barras, categoria, marca ou fornecedor"
                     autocomplete="off"
-                    autofocus
+                    spellcheck="false"
+                    data-campo-leitor
                 >
                 <button class="BotaoPrimario" type="submit">Pesquisar</button>
             </form>
+            <p class="MensagemLeitorCodigo" data-mensagem-leitor="{NumeroCarrinho}" role="status"></p>
             <div id="ResultadosBuscaCarrinho" aria-live="polite">
                 {ResultadosBusca}
             </div>
@@ -756,14 +810,14 @@ def ComponenteCarrinho(Request):
                         title="Editar nome do cliente"
                     >&#9998;</button>
                 </div>
-                <span>{ResumoCarrinho['QuantidadeProdutos']} produtos</span>
+                <span data-resumo-carrinho="{NumeroCarrinho}" data-parte-resumo="quantidade">{ResumoCarrinho['QuantidadeProdutos']} produtos</span>
             </div>
-            {ItensCarrinho}
+            <div data-resumo-carrinho="{NumeroCarrinho}" data-parte-resumo="itens">{ItensCarrinho}</div>
             <div class="TotalCarrinho">
                 <span>Total</span>
-                <strong>R$ {ResumoCarrinho['TotalFormatado']}</strong>
+                <strong data-resumo-carrinho="{NumeroCarrinho}" data-parte-resumo="total">R$ {ResumoCarrinho['TotalFormatado']}</strong>
             </div>
-            {Pagamento}
+            <div data-resumo-carrinho="{NumeroCarrinho}" data-parte-resumo="pagamento">{Pagamento}</div>
         </aside>
     </div>
 
@@ -792,6 +846,20 @@ def ComponenteCarrinho(Request):
 
     <script>
         (() => {{
+            const AbaAtiva = document.querySelector(".AbaCarrinho.Ativa");
+            const ListaAbas = document.querySelector(".ListaAbasCarrinhos");
+            const ExibirAbaAtiva = () => {{
+                ListaAbas.scrollLeft += AbaAtiva.getBoundingClientRect().left - ListaAbas.getBoundingClientRect().left;
+            }};
+            ExibirAbaAtiva();
+            window.addEventListener("resize", ExibirAbaAtiva);
+            document.querySelectorAll("[data-confirmar-fechamento]").forEach((Formulario) => {{
+                Formulario.addEventListener("submit", (Evento) => {{
+                    const Contador = document.querySelector(`[data-resumo-carrinho="${{Formulario.elements.carrinho.value}}"][data-parte-resumo="aba-quantidade"]`);
+                    const Ocupado = Number.parseInt(Contador?.textContent || "0", 10) > 0 || Formulario.dataset.clienteIdentificado === "true";
+                    if (Ocupado && !window.confirm("Fechar este carrinho e descartar o atendimento? Os itens e o nome do cliente serão removidos.")) Evento.preventDefault();
+                }});
+            }});
             const DialogoNome = document.getElementById("DialogoNomeCarrinho");
             const CampoNomeCliente = document.getElementById("NomeClienteCarrinho");
 
@@ -949,46 +1017,51 @@ def ComponenteCarrinho(Request):
                 TemporizadorBusca = window.setTimeout(() => PesquisarProdutos(Busca), 160);
             }});
 
-            const Formulario = document.getElementById("FormularioPagamento");
-            if (!Formulario) return;
+            const InicializarPagamento = () => {{
+                const Formulario = document.getElementById("FormularioPagamento");
+                if (!Formulario || Formulario.dataset.inicializado) return;
+                Formulario.dataset.inicializado = "true";
 
-            const OpcoesPagamento = Formulario.querySelectorAll('[name="forma_pagamento"]');
-            const AreaDinheiro = document.getElementById("AreaDinheiro");
-            const ValorRecebido = document.getElementById("ValorRecebido");
-            const TrocoCalculado = document.getElementById("TrocoCalculado");
-            const Total = Number("{ResumoCarrinho['Total']}");
+                const OpcoesPagamento = Formulario.querySelectorAll('[name="forma_pagamento"]');
+                const AreaDinheiro = document.getElementById("AreaDinheiro");
+                const ValorRecebido = document.getElementById("ValorRecebido");
+                const TrocoCalculado = document.getElementById("TrocoCalculado");
+                const Total = Number(Formulario.dataset.total);
 
-            const FormatarMoeda = (Valor) => Valor.toLocaleString("pt-BR", {{
-                style: "currency",
-                currency: "BRL",
-            }});
+                const FormatarMoeda = (Valor) => Valor.toLocaleString("pt-BR", {{
+                    style: "currency",
+                    currency: "BRL",
+                }});
 
-            const ConverterValor = (Valor) => Number(Valor.replace(".", "").replace(",", "."));
+                const ConverterValor = (Valor) => Number(Valor.replace(".", "").replace(",", "."));
 
-            const AtualizarTroco = () => {{
-                const Recebido = ConverterValor(ValorRecebido.value);
-                if (!Number.isFinite(Recebido)) {{
-                    TrocoCalculado.textContent = "R$ 0,00";
-                    return;
-                }}
+                const AtualizarTroco = () => {{
+                    const Recebido = ConverterValor(ValorRecebido.value);
+                    if (!Number.isFinite(Recebido)) {{
+                        TrocoCalculado.textContent = "R$ 0,00";
+                        return;
+                    }}
 
-                const Diferenca = Recebido - Total;
-                TrocoCalculado.textContent = Diferenca >= 0
-                    ? FormatarMoeda(Diferenca)
-                    : `Faltam ${{FormatarMoeda(Math.abs(Diferenca))}}`;
+                    const Diferenca = Recebido - Total;
+                    TrocoCalculado.textContent = Diferenca >= 0
+                        ? FormatarMoeda(Diferenca)
+                        : `Faltam ${{FormatarMoeda(Math.abs(Diferenca))}}`;
+                }};
+
+                const AtualizarFormaPagamento = () => {{
+                    const Forma = Formulario.querySelector('[name="forma_pagamento"]:checked').value;
+                    const UsaDinheiro = Forma === "dinheiro";
+                    AreaDinheiro.hidden = !UsaDinheiro;
+                    ValorRecebido.required = UsaDinheiro;
+                    if (UsaDinheiro) AtualizarTroco();
+                }};
+
+                OpcoesPagamento.forEach((Opcao) => Opcao.addEventListener("change", AtualizarFormaPagamento));
+                ValorRecebido.addEventListener("input", AtualizarTroco);
+                AtualizarFormaPagamento();
             }};
-
-            const AtualizarFormaPagamento = () => {{
-                const Forma = Formulario.querySelector('[name="forma_pagamento"]:checked').value;
-                const UsaDinheiro = Forma === "dinheiro";
-                AreaDinheiro.hidden = !UsaDinheiro;
-                ValorRecebido.required = UsaDinheiro;
-                if (UsaDinheiro) AtualizarTroco();
-            }};
-
-            OpcoesPagamento.forEach((Opcao) => Opcao.addEventListener("change", AtualizarFormaPagamento));
-            ValorRecebido.addEventListener("input", AtualizarTroco);
-            AtualizarFormaPagamento();
+            InicializarPagamento();
+            document.addEventListener("carrinhos-atualizados", InicializarPagamento);
         }})();
     </script>
     """
@@ -996,10 +1069,25 @@ def ComponenteCarrinho(Request):
     return HttpResponse(
         RenderizarLayoutBase(
             "Carrinho de compras",
-            ConteudoPrincipal,
+            ConteudoPrincipal + ObterComplementoLeitorCodigoBarras(NumeroCarrinho),
             RotaAtiva="carrinho",
         )
     )
+
+
+@ExigirPost
+def ComponenteAbrirCarrinho(Request):
+    Numero = CriarCarrinhoSessao(Request)
+    return RedirecionarAposAcao(Request, Numero)
+
+
+@ExigirPost
+def ComponenteFecharCarrinho(Request):
+    Numero = ObterNumeroCarrinhoDaAcao(Request)
+    if Numero is not None:
+        FecharCarrinhoSessao(Request, Numero)
+    Proximo = ObterNumeroCarrinhoSeguro(Request, Request.POST.get("carrinho_selecionado")) or "1"
+    return RedirecionarAposAcao(Request, Proximo)
 
 
 @ExigirPost

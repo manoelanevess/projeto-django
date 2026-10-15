@@ -25,9 +25,9 @@ def FormatarValorMoeda(Valor):
     )
 
 
-def GerarResumoProdutos(Busca="", Estoque="", Categoria="", Fornecedor=""):
+def GerarResumoProdutos(Busca="", Estoque="", Categoria="", Fornecedor="", BuscaPorInicio=False):
     ProdutosFiltrados = list(
-        BuscarProdutos(Busca, Estoque, Categoria, Fornecedor)
+        BuscarProdutos(Busca, Estoque, Categoria, Fornecedor, BuscaPorInicio=BuscaPorInicio)
     )
     TotalItens = sum(
         (
@@ -100,6 +100,7 @@ def GerarResumoProdutos(Busca="", Estoque="", Categoria="", Fornecedor=""):
         ProdutosFormatados.append({
             "Id": Produto.id,
             "Nome": Produto.Nome,
+            "CodigoBarras": Produto.CodigoBarras or "",
             "Categoria": Produto.Categoria or "Sem categoria",
             "Marca": Produto.Marca or "Sem marca",
             "Fornecedor": FornecedorReferencia.Nome,
