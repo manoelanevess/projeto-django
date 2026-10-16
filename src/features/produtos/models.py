@@ -10,6 +10,19 @@ from django.dispatch import receiver
 from .LogicaCodigoBarras import NormalizarCodigoBarras
 
 
+class IdentificacaoProduto(models.Model):
+    CodigoBarras = models.CharField(max_length=14, unique=True)
+    Nome = models.CharField(max_length=120, blank=True)
+    Marca = models.CharField(max_length=80, blank=True)
+    Fontes = models.JSONField(default=dict, blank=True)
+    Confirmada = models.BooleanField(default=False)
+    AtualizadaEm = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "identificacao de produto"
+        verbose_name_plural = "identificacoes de produtos"
+
+
 class Produto(models.Model):
     UNIDADE = "unidade"
     QUILOGRAMA = "quilograma"

@@ -155,12 +155,7 @@ def MontarProdutosParaPesquisa(ProdutosEncontrados):
 
 def RenderizarResultadosBusca(ProdutosEncontrados, TokenCsrf, NumeroCarrinho, Busca):
     if not Busca:
-        return """
-        <section class="EstadoBuscaVenda">
-            <h2>Pesquisar produtos</h2>
-            <p>Use o produto, a categoria, a marca ou o fornecedor na pesquisa.</p>
-        </section>
-        """
+        return ""
 
     Produtos = MontarProdutosParaPesquisa(ProdutosEncontrados)
 
@@ -983,9 +978,10 @@ def ComponenteCarrinho(Request):
 
                     if (!Resposta.ok) throw new Error("Falha ao pesquisar produtos");
                     const Dados = await Resposta.json();
+                    if (ControleBusca !== ControleAtual) return;
                     RenderizarProdutos(Dados.Produtos, Busca);
                 }} catch (Erro) {{
-                    if (Erro.name !== "AbortError") {{
+                    if (Erro.name !== "AbortError" && ControleBusca === ControleAtual) {{
                         RenderizarEstadoBusca(
                             "Pesquisa indisponível",
                             "Não foi possível pesquisar agora. Tente novamente.",
@@ -1002,14 +998,12 @@ def ComponenteCarrinho(Request):
                 const Busca = CampoBusca.value.trim();
                 clearTimeout(TemporizadorBusca);
                 if (ControleBusca) ControleBusca.abort();
+                ControleBusca = null;
                 AtualizarBuscaNaUrl(Busca);
 
                 if (!Busca) {{
                     AreaResultados.removeAttribute("aria-busy");
-                    RenderizarEstadoBusca(
-                        "Pesquisar produtos",
-                        "Use o produto, a categoria, a marca ou o fornecedor na pesquisa.",
-                    );
+                    AreaResultados.replaceChildren();
                     return;
                 }}
 

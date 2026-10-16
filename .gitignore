@@ -6,7 +6,6 @@ __pycache__/
 .env
 .env.*
 !.env.example
-.vercel/
 staticfiles/
 .vscode/
 .idea/

@@ -12,6 +12,9 @@ load_dotenv(CaminhoEnv)
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 PESQUISA_PRODUTO_IA_ATIVA = os.environ.get("PESQUISA_PRODUTO_IA_ATIVA", "0") == "1"
 PESQUISA_PRODUTO_IA_MODELO = os.environ.get("PESQUISA_PRODUTO_IA_MODELO", "gpt-5.4-mini").strip()
+COSMOS_API_TOKEN = os.environ.get("COSMOS_API_TOKEN", "").strip()
+COSMOS_API_USER_AGENT = os.environ.get("COSMOS_API_USER_AGENT", "").strip()
+COSMOS_LIMITE_DIARIO = int(os.environ.get("COSMOS_LIMITE_DIARIO", "25"))
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "django-insecure-projeto-estoque-dev")
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
@@ -74,13 +77,12 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "src.configuracao.wsgi.application"
+WSGI_APPLICATION = "configuracao.wsgi.application"
 
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.environ.get("POSTGRES_DB")
-        or os.environ.get("POSTGRES_DATABASE", "controle_estoque"),
+        "NAME": os.environ.get("POSTGRES_DB", "controle_estoque"),
         "USER": os.environ.get("POSTGRES_USER", "postgres"),
         "PASSWORD": os.environ.get("POSTGRES_PASSWORD", "postgres"),
         "HOST": os.environ.get("POSTGRES_HOST", "127.0.0.1"),

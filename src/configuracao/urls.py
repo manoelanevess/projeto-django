@@ -12,7 +12,7 @@ from features.fornecedor.ComponenteFornecedor import (
     ComponenteFormularioFornecedor,
 )
 from features.pagina_principal.ComponentePaginaPrincipal import ComponentePaginaPrincipal
-from features.produtos.ComponenteCatalogoProduto import ComponenteConsultarCatalogoProduto, ComponentePesquisarCodigoWeb
+from features.produtos.ComponenteCatalogoProduto import ComponenteComplementarCodigo, ComponenteConsultarCatalogoProduto, ComponentePesquisarCodigoWeb
 from features.produtos.ComponenteProduto import (
     ComponenteAtualizarDataLote,
     ComponenteAtualizarValidadeLote,
@@ -37,6 +37,7 @@ from features.vendas.ComponenteCarrinho import (
 )
 from features.vendas.ComponenteContaCliente import (
     ComponenteContinhasClientes,
+    ComponenteExcluirContaCliente,
     ComponenteRegistrarPagamentoContaCliente,
 )
 from features.vendas.ComponenteHistoricoVenda import ComponenteHistoricoVendas
@@ -100,6 +101,11 @@ urlpatterns = [
         name="RegistrarPagamentoContaCliente",
     ),
     path(
+        "continhas/<int:ContaId>/excluir",
+        ProtegerComponente(ComponenteExcluirContaCliente),
+        name="ExcluirContaCliente",
+    ),
+    path(
         "produtos",
         ProtegerComponente(ComponenteRedirecionarProdutos),
         name="ListaProdutos",
@@ -107,6 +113,7 @@ urlpatterns = [
     path("estoque", ProtegerComponente(ComponenteEstoque), name="Estoque"),
     path("estoque/ler-codigo", ProtegerComponente(ComponenteLerCodigoEstoque), name="LerCodigoEstoque"),
     path("estoque/pesquisar-codigo-web", ProtegerComponente(ComponentePesquisarCodigoWeb), name="PesquisarCodigoWeb"),
+    path("estoque/complementar-codigo", ProtegerComponente(ComponenteComplementarCodigo), name="ComplementarCodigo"),
     path(
         "estoque/consultar-codigo",
         ProtegerComponente(ComponenteConsultarCatalogoProduto),

@@ -1,7 +1,9 @@
 """Regras das continhas de clientes."""
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
+from django.db import transaction
 from django.db.models import Q, Sum
+from django.utils import timezone
 
 from .models import ContaCliente, LancamentoContaCliente
 
@@ -44,7 +46,7 @@ def CalcularSaldoConta(Conta):
 
 
 def BuscarContinhasClientes(Proprietario, Busca=""):
-    Contas = ContaCliente.objects.filter(Proprietario=Proprietario).prefetch_related(
+    Contas = ContaCliente.objects.filter(Proprietario=Proprietario, ExcluidaEm__isnull=True).prefetch_related(
         "Lancamentos",
         "Lancamentos__Venda",
     )
@@ -55,9 +57,12 @@ def BuscarContinhasClientes(Proprietario, Busca=""):
     return Contas.order_by("NomeCliente")
 
 
+@transaction.atomic
 def RegistrarPagamentoContaCliente(Proprietario, ContaId, ValorInformado, Descricao=""):
     try:
-        Conta = ContaCliente.objects.get(pk=ContaId, Proprietario=Proprietario)
+        Conta = ContaCliente.objects.select_for_update().get(
+            pk=ContaId, Proprietario=Proprietario, ExcluidaEm__isnull=True,
+        )
     except (ContaCliente.DoesNotExist, TypeError, ValueError):
         raise ValueError("Continha não encontrada.") from None
 
@@ -71,4 +76,17 @@ def RegistrarPagamentoContaCliente(Proprietario, ContaId, ValorInformado, Descri
         Valor=Valor,
     )
 
+    return Conta
+
+
+@transaction.atomic
+def ExcluirContaCliente(Proprietario, ContaId):
+    Conta = ContaCliente.objects.select_for_update().get(
+        pk=ContaId, Proprietario=Proprietario, ExcluidaEm__isnull=True,
+    )
+    if CalcularSaldoConta(Conta) != Decimal("0.00"):
+        raise ValueError("Somente continhas com saldo zerado podem ser apagadas.")
+
+    Conta.ExcluidaEm = timezone.now()
+    Conta.save(update_fields=["ExcluidaEm", "AtualizadaEm"])
     return Conta

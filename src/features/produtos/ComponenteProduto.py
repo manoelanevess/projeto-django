@@ -691,10 +691,7 @@ def ComponenteFormularioProduto(Request, ProdutoId=None):
         <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
         <div class="ConsultaCatalogo" id="ConsultaCatalogoProduto" role="status" aria-live="polite" hidden>
             <span id="MensagemCatalogoProduto"></span>
-            <span id="FonteCatalogoProduto" hidden>
-                Fonte: <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener noreferrer">Open Food Facts</a>
-                <span id="LicencaCatalogoProduto">(<a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL</a>)</span>.
-            </span>
+            <span id="FonteCatalogoProduto" hidden></span>
         </div>
         {ErrosGerais}
         {AvisoFornecedor}

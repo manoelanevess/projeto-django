@@ -172,6 +172,7 @@ def ObterNomeExibicaoCarrinho(Request, NumeroCarrinho):
 def DefinirNomeCarrinho(Request, NumeroCarrinho, NomeInformado):
     Numero = ValidarNumeroCarrinho(NumeroCarrinho, Request)
     Nome = " ".join(str(NomeInformado or "").split())
+    Nome = Nome[:1].upper() + Nome[1:]
 
     if len(Nome) > 80:
         raise ValueError("O nome do cliente deve ter no máximo 80 caracteres.")
@@ -508,15 +509,21 @@ def ConcluirVenda(
             Troco = (ValorRecebido - Total).quantize(Centavo)
 
         if FormaPagamento == Venda.CONTA_CLIENTE:
-            ContaDaVenda, _ = ContaCliente.objects.select_for_update().get_or_create(
-                Proprietario=Request.user,
-                NomeCliente=NomeCliente,
-                defaults={"Ativa": True},
+            ContasDoCliente = ContaCliente.objects.select_for_update().filter(Proprietario=Request.user)
+            ContaDaVenda = (
+                ContasDoCliente.filter(NomeCliente=NomeCliente).first()
+                or ContasDoCliente.filter(NomeCliente__iexact=NomeCliente).order_by("id").first()
             )
+            if ContaDaVenda is None:
+                ContaDaVenda, _ = ContasDoCliente.get_or_create(
+                    NomeCliente=NomeCliente,
+                    defaults={"Proprietario": Request.user, "Ativa": True},
+                )
 
-            if not ContaDaVenda.Ativa:
+            if not ContaDaVenda.Ativa or ContaDaVenda.ExcluidaEm is not None:
                 ContaDaVenda.Ativa = True
-                ContaDaVenda.save(update_fields=["Ativa", "AtualizadaEm"])
+                ContaDaVenda.ExcluidaEm = None
+                ContaDaVenda.save(update_fields=["Ativa", "ExcluidaEm", "AtualizadaEm"])
 
         VendaConcluida = Venda.objects.create(
             Proprietario=Request.user,

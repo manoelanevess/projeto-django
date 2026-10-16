@@ -8,6 +8,7 @@ from django.db.models import Q
 from features.fornecedor.models import Fornecedor
 
 from .models import LoteEstoque, Produto
+from .LogicaIdentificacaoProduto import ConfirmarIdentificacaoProduto
 
 
 def NormalizarNomeProduto(Nome):
@@ -172,10 +173,18 @@ class FormularioProduto(forms.ModelForm):
         LoteInicial = ProdutoCriado.LotesEstoque.get(Numero=1)
         LoteInicial.DataValidade = self.cleaned_data["DataValidade"]
         LoteInicial.save(update_fields=["DataValidade"])
+        ConfirmarIdentificacaoProduto(ProdutoCriado)
         return ProdutoCriado
 
 
 class FormularioEdicaoProduto(forms.ModelForm):
+    @transaction.atomic
+    def save(self, commit=True):
+        ProdutoSalvo = super().save(commit=commit)
+        if commit:
+            ConfirmarIdentificacaoProduto(ProdutoSalvo)
+        return ProdutoSalvo
+
     class Meta:
         model = Produto
         fields = [

@@ -112,6 +112,7 @@ class ContaCliente(models.Model):
     )
     NomeCliente = models.CharField(max_length=80)
     Ativa = models.BooleanField(default=True)
+    ExcluidaEm = models.DateTimeField(null=True, blank=True)
     CriadaEm = models.DateTimeField(auto_now_add=True)
     AtualizadaEm = models.DateTimeField(auto_now=True)
 

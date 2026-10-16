@@ -10,6 +10,7 @@ from features.fornecedor.models import Fornecedor
 from features.produtos.models import LoteEstoque, Produto
 
 from .LogicaCarrinho import ObterChaveLote
+from .LogicaContaCliente import CalcularSaldoConta
 from .LogicaVenda import ConsolidarVendasDeMesesAnteriores, ObterResumoFinanceiro
 from .models import (
     ContaCliente,
@@ -20,6 +21,133 @@ from .models import (
     ResumoVendaMensal,
     Venda,
 )
+
+
+class TesteExclusaoContinhas(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.Usuario = ObterModeloUsuario().objects.create_user(username="exclusao_continhas")
+        cls.OutroUsuario = ObterModeloUsuario().objects.create_user(username="outras_continhas")
+        cls.Quitada = ContaCliente.objects.create(Proprietario=cls.Usuario, NomeCliente="Luiz")
+        cls.Aberta = ContaCliente.objects.create(Proprietario=cls.Usuario, NomeCliente="Maria")
+        cls.ComCredito = ContaCliente.objects.create(Proprietario=cls.Usuario, NomeCliente="Ana")
+        cls.Inativa = ContaCliente.objects.create(Proprietario=cls.Usuario, NomeCliente="Paulo inativo", Ativa=False)
+        cls.DeOutroUsuario = ContaCliente.objects.create(Proprietario=cls.OutroUsuario, NomeCliente="Cliente de outro usuario")
+        FornecedorTeste = Fornecedor.objects.create(Nome="Fornecedor exclusao continhas")
+        cls.Produto = Produto.objects.create(
+            Nome="Produto da continha", Fornecedor=FornecedorTeste,
+            QuantidadeEstoque=Decimal("10.000"), PrecoCusto=Decimal("7.00"), PrecoVenda=Decimal("10.00"),
+        )
+        cls.VendaAnterior = Venda.objects.create(
+            Proprietario=cls.Usuario, NomeCliente="Luiz", ContaCliente=cls.Quitada,
+            FormaPagamento=Venda.CONTA_CLIENTE, Total=Decimal("10.00"), Lucro=Decimal("3.00"),
+        )
+        ItemVenda.objects.create(
+            Venda=cls.VendaAnterior, Produto=cls.Produto, NomeProduto=cls.Produto.Nome,
+            UnidadeVenda="unidade", Quantidade=Decimal("1.000"), CustoUnitario=Decimal("7.00"),
+            PrecoUnitario=Decimal("10.00"), Subtotal=Decimal("10.00"), Lucro=Decimal("3.00"),
+        )
+        LancamentoContaCliente.objects.create(Conta=cls.Quitada, Venda=cls.VendaAnterior, Tipo="compra", Valor=Decimal("10.00"))
+        LancamentoContaCliente.objects.create(Conta=cls.Quitada, Tipo="pagamento", Valor=Decimal("10.00"))
+        LancamentoContaCliente.objects.create(Conta=cls.Aberta, Tipo="compra", Valor=Decimal("10.00"))
+        LancamentoContaCliente.objects.create(Conta=cls.ComCredito, Tipo="pagamento", Valor=Decimal("5.00"))
+        LancamentoContaCliente.objects.create(Conta=cls.Inativa, Tipo="compra", Valor=Decimal("2.00"))
+
+    def setUp(self):
+        self.client.force_login(self.Usuario)
+
+    def Excluir(self, Conta, **Dados):
+        return self.client.post(f"/continhas/{Conta.id}/excluir", Dados)
+
+    def test_ExcluiQuitadaDaListaSemApagarVendaItensOuLancamentos(self):
+        self.assertRedirects(self.Excluir(self.Quitada), "/continhas")
+        self.Quitada.refresh_from_db()
+        self.assertIsNotNone(self.Quitada.ExcluidaEm)
+        self.assertEqual(self.Quitada.Lancamentos.count(), 2)
+        self.assertEqual(CalcularSaldoConta(self.Quitada), Decimal("0.00"))
+        self.VendaAnterior.refresh_from_db()
+        self.assertEqual(self.VendaAnterior.ContaCliente, self.Quitada)
+        self.assertEqual(self.VendaAnterior.Total, Decimal("10.00"))
+        self.assertEqual(self.VendaAnterior.Lucro, Decimal("3.00"))
+        self.assertEqual(self.VendaAnterior.Itens.count(), 1)
+        self.assertNotContains(self.client.get("/continhas", {"busca": "Luiz"}), "Apagar continha de Luiz")
+        Historico = self.client.get("/vendas/historico", {"busca": "Luiz"})
+        self.assertContains(Historico, "Produto da continha")
+        self.assertContains(Historico, "R$ 10,00")
+
+    def test_DividaOuCreditoImpedemExclusaoMesmoComPostDireto(self):
+        for Conta in (self.Aberta, self.ComCredito, self.Inativa):
+            with self.subTest(Conta=Conta.NomeCliente):
+                Resposta = self.Excluir(Conta)
+                self.assertRedirects(Resposta, "/continhas", fetch_redirect_response=False)
+                Conta.refresh_from_db()
+                self.assertIsNone(Conta.ExcluidaEm)
+                self.assertContains(self.client.get("/continhas"), "Somente continhas com saldo zerado podem ser apagadas.")
+
+    def test_ReconfereSaldoDepoisDeMostrarBotao(self):
+        self.client.get("/continhas")
+        LancamentoContaCliente.objects.create(Conta=self.Quitada, Tipo="compra", Valor=Decimal("1.00"))
+        self.Excluir(self.Quitada)
+        self.Quitada.refresh_from_db()
+        self.assertIsNone(self.Quitada.ExcluidaEm)
+
+    def test_ExclusaoExigeLoginEPost(self):
+        Endereco = f"/continhas/{self.Quitada.id}/excluir"
+        SemLogin = Client().post(Endereco)
+        self.assertEqual(SemLogin.status_code, 302)
+        self.assertTrue(SemLogin.url.startswith("/login?next="))
+        self.assertEqual(self.client.get(Endereco).status_code, 405)
+        self.Quitada.refresh_from_db()
+        self.assertIsNone(self.Quitada.ExcluidaEm)
+
+    def test_ExclusaoExigeCsrf(self):
+        Cliente = Client(enforce_csrf_checks=True)
+        Cliente.force_login(self.Usuario)
+        Endereco = f"/continhas/{self.Quitada.id}/excluir"
+        self.assertEqual(Cliente.post(Endereco).status_code, 403)
+        Cliente.get("/continhas")
+        Resposta = Cliente.post(Endereco, {"csrfmiddlewaretoken": Cliente.cookies["csrftoken"].value})
+        self.assertEqual(Resposta.status_code, 302)
+
+    def test_OutroProprietarioContaInexistenteEOuJaExcluidaRetornam404(self):
+        self.assertEqual(self.Excluir(self.DeOutroUsuario).status_code, 404)
+        self.assertEqual(self.client.post("/continhas/999999999/excluir").status_code, 404)
+        self.Excluir(self.Quitada)
+        self.assertEqual(self.Excluir(self.Quitada).status_code, 404)
+        self.DeOutroUsuario.refresh_from_db()
+        self.assertIsNone(self.DeOutroUsuario.ExcluidaEm)
+
+    def test_ExclusaoPreservaFiltroNaUrl(self):
+        self.assertRedirects(self.Excluir(self.Quitada, busca="Luiz Silva"), "/continhas?busca=Luiz+Silva")
+
+    def test_ListaInativaNaoExcluidaContinuaAcessivel(self):
+        self.assertContains(self.client.get("/continhas", {"busca": "Paulo"}), "Paulo inativo")
+
+    def test_PagamentoNaoPodeSerAdicionadoAContaExcluida(self):
+        self.Excluir(self.Quitada)
+        Resposta = self.client.post("/continhas/pagamento", {"conta": self.Quitada.id, "valor": "1.00"}, follow=True)
+        self.assertContains(Resposta, "Continha não encontrada.")
+        self.assertEqual(self.Quitada.Lancamentos.count(), 2)
+
+    def test_ContaSemLancamentosPodeSerExcluidaEListaFicaVazia(self):
+        ContaVazia = ContaCliente.objects.create(Proprietario=self.OutroUsuario, NomeCliente="Vazia")
+        self.client.force_login(self.OutroUsuario)
+        self.Excluir(self.DeOutroUsuario)
+        self.Excluir(ContaVazia)
+        self.assertContains(self.client.get("/continhas"), "Nenhuma continha encontrada")
+
+    def test_NovaCompraReabreMesmaContaComHistoricoPreservado(self):
+        self.Excluir(self.Quitada)
+        self.client.post("/carrinho/nome", {"carrinho": "1", "nome_cliente": "luiz"})
+        self.client.post("/carrinho/adicionar", {"carrinho": "1", "produto": self.Produto.id, "quantidade": "1"})
+        self.client.post("/carrinho/concluir", {"carrinho": "1", "forma_pagamento": Venda.CONTA_CLIENTE})
+        self.Quitada.refresh_from_db()
+        self.assertIsNone(self.Quitada.ExcluidaEm)
+        self.assertEqual(ContaCliente.objects.filter(Proprietario=self.Usuario).count(), 4)
+        self.assertEqual(Venda.objects.filter(ContaCliente=self.Quitada).count(), 2)
+        self.assertEqual(self.Quitada.Lancamentos.count(), 3)
+        self.assertEqual(CalcularSaldoConta(self.Quitada), Decimal("10.00"))
+        self.assertContains(self.client.get("/continhas", {"busca": "Luiz"}), "Apagar continha de Luiz")
 
 
 class TesteCarrinhosDinamicos(TestCase):
@@ -1113,7 +1241,7 @@ class TesteCarrinhosVenda(TestCase):
             "/carrinho/nome",
             {
                 "carrinho": "2",
-                "nome_cliente": "  Maria   da Silva  ",
+                "nome_cliente": "  maria   da Silva  ",
                 "retorno": "pagina-principal",
                 "carrinhos_abertos": "2",
             },
@@ -1142,6 +1270,50 @@ class TesteCarrinhosVenda(TestCase):
         self.assertNotIn("2", self.client.session.get("NomesCarrinhosVenda", {}))
         self.assertNotContains(self.client.get("/"), "Maria da Silva")
         self.assertContains(self.client.get("/dashboard"), "Maria da Silva")
+
+    def test_NomeDoCarrinhoRecebeInicialMaiusculaSemAlterarRestante(self):
+        for NomeInformado, NomeEsperado in (
+            ("  luiz  ", "Luiz"),
+            ("álvaro da Silva", "Álvaro da Silva"),
+            ("joão d'Ávila", "João d'Ávila"),
+            ("ANA", "ANA"),
+        ):
+            with self.subTest(Nome=NomeInformado):
+                self.client.post("/carrinho/nome", {"carrinho": "1", "nome_cliente": NomeInformado})
+                self.assertEqual(self.client.session["NomesCarrinhosVenda"]["1"], NomeEsperado)
+                self.assertContains(self.client.get("/carrinho"), NomeEsperado.replace("'", "&#x27;"))
+        self.client.post("/carrinho/nome", {"carrinho": "1", "nome_cliente": "   "})
+        self.assertNotIn("1", self.client.session["NomesCarrinhosVenda"])
+
+    def test_PesquisaDoCarrinhoNaoMostraTextoIntrodutorio(self):
+        for Busca in ("", "Arroz", "produto inexistente"):
+            with self.subTest(Busca=Busca):
+                Pagina = self.client.get("/carrinho", {"busca": Busca})
+                self.assertNotContains(Pagina, "Pesquisar produtos")
+                self.assertNotContains(Pagina, "Use o produto, a categoria, a marca ou o fornecedor na pesquisa.")
+        self.assertContains(self.client.get("/carrinho", {"busca": "produto inexistente"}), "Nenhum produto disponível")
+
+    def test_InicialMaiusculaReutilizaContinhaAnteriorSemDuplicar(self):
+        ContaAnterior = ContaCliente.objects.create(Proprietario=self.Usuario, NomeCliente="luiz da Silva", Ativa=False)
+        self.client.post("/carrinho/nome", {"carrinho": "1", "nome_cliente": "luiz da Silva"})
+        self.AdicionarProduto("1", self.Arroz, "1")
+        self.client.post("/carrinho/concluir", {"carrinho": "1", "forma_pagamento": Venda.CONTA_CLIENTE})
+        VendaConcluida = Venda.objects.get()
+        self.assertEqual(VendaConcluida.NomeCliente, "Luiz da Silva")
+        self.assertEqual(VendaConcluida.ContaCliente, ContaAnterior)
+        self.assertEqual(ContaCliente.objects.filter(Proprietario=self.Usuario).count(), 1)
+        self.assertTrue(LancamentoContaCliente.objects.filter(Conta=ContaAnterior, Venda=VendaConcluida).exists())
+        ContaAnterior.refresh_from_db()
+        self.assertTrue(ContaAnterior.Ativa)
+
+    def test_ContinhaComNomeExatoTemPreferenciaSemJuntarContasAnteriores(self):
+        ContaCliente.objects.create(Proprietario=self.Usuario, NomeCliente="luiz")
+        ContaExata = ContaCliente.objects.create(Proprietario=self.Usuario, NomeCliente="Luiz")
+        self.client.post("/carrinho/nome", {"carrinho": "1", "nome_cliente": "luiz"})
+        self.AdicionarProduto("1", self.Arroz, "1")
+        self.client.post("/carrinho/concluir", {"carrinho": "1", "forma_pagamento": Venda.CONTA_CLIENTE})
+        self.assertEqual(Venda.objects.get().ContaCliente, ContaExata)
+        self.assertEqual(ContaCliente.objects.filter(Proprietario=self.Usuario).count(), 2)
 
     def test_ContinhasNaoMostramBotaoAbrirAtendimento(self):
         PaginaVazia = self.client.get("/continhas")
