@@ -1,8 +1,12 @@
 """Regras das continhas de clientes."""
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
+from django.db import transaction
 from django.db.models import Q, Sum
+from django.utils import timezone
 
+from componentes.MascarasNumericas import NormalizarNumeroMascarado
+from componentes.NomesCadastro import NormalizarNomeCadastro
 from .models import ContaCliente, LancamentoContaCliente
 
 
@@ -10,7 +14,7 @@ Centavo = Decimal("0.01")
 
 
 def NormalizarNomeCliente(NomeCliente):
-    Nome = " ".join(str(NomeCliente or "").split())
+    Nome = NormalizarNomeCadastro(NomeCliente)
 
     if len(Nome) > 80:
         raise ValueError("O nome do cliente deve ter no máximo 80 caracteres.")
@@ -23,7 +27,9 @@ def NormalizarNomeCliente(NomeCliente):
 
 def ConverterValorConta(Valor):
     try:
-        ValorDecimal = Decimal(str(Valor).strip().replace(",", "."))
+        ValorDecimal = Decimal(NormalizarNumeroMascarado(Valor))
+        if not ValorDecimal.is_finite() or ValorDecimal.copy_abs() > Decimal("9999999999.99"):
+            raise ValueError
     except (InvalidOperation, TypeError, ValueError):
         raise ValueError("Informe um valor válido.") from None
 
@@ -44,7 +50,7 @@ def CalcularSaldoConta(Conta):
 
 
 def BuscarContinhasClientes(Proprietario, Busca=""):
-    Contas = ContaCliente.objects.filter(Proprietario=Proprietario).prefetch_related(
+    Contas = ContaCliente.objects.filter(Proprietario=Proprietario, ExcluidaEm__isnull=True).prefetch_related(
         "Lancamentos",
         "Lancamentos__Venda",
     )
@@ -55,9 +61,12 @@ def BuscarContinhasClientes(Proprietario, Busca=""):
     return Contas.order_by("NomeCliente")
 
 
+@transaction.atomic
 def RegistrarPagamentoContaCliente(Proprietario, ContaId, ValorInformado, Descricao=""):
     try:
-        Conta = ContaCliente.objects.get(pk=ContaId, Proprietario=Proprietario)
+        Conta = ContaCliente.objects.select_for_update().get(
+            pk=ContaId, Proprietario=Proprietario, ExcluidaEm__isnull=True,
+        )
     except (ContaCliente.DoesNotExist, TypeError, ValueError):
         raise ValueError("Continha não encontrada.") from None
 
@@ -71,4 +80,17 @@ def RegistrarPagamentoContaCliente(Proprietario, ContaId, ValorInformado, Descri
         Valor=Valor,
     )
 
+    return Conta
+
+
+@transaction.atomic
+def ExcluirContaCliente(Proprietario, ContaId):
+    Conta = ContaCliente.objects.select_for_update().get(
+        pk=ContaId, Proprietario=Proprietario, ExcluidaEm__isnull=True,
+    )
+    if CalcularSaldoConta(Conta) != Decimal("0.00"):
+        raise ValueError("Somente continhas com saldo zerado podem ser apagadas.")
+
+    Conta.ExcluidaEm = timezone.now()
+    Conta.save(update_fields=["ExcluidaEm", "AtualizadaEm"])
     return Conta

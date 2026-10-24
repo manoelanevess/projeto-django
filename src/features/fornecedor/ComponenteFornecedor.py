@@ -93,7 +93,9 @@ def ComponenteFornecedores(Request):
                             <form
                                 method="post"
                                 action="/fornecedores/{FornecedorEstoque.id}/excluir"
-                                onsubmit="return confirm('Inativar este fornecedor?');"
+                                data-confirmar="Inativar {escape(FornecedorEstoque.Nome)}?"
+                                data-confirmar-descricao="O fornecedor ficará inativo e deixará de estar disponível para novas entradas de estoque."
+                                data-confirmar-acao="Inativar fornecedor"
                             >
                                 <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
                                 <button
@@ -220,6 +222,7 @@ def ComponenteFornecedores(Request):
                 "FormularioBuscaFornecedores", "BuscaFornecedor", "ResultadosFornecedores", "ErroBuscaFornecedores",
             ),
             RotaAtiva="fornecedores",
+            Request=Request,
         )
     )
 
@@ -329,7 +332,7 @@ def ComponenteFormularioFornecedor(Request, FornecedorId=None):
     """
 
     return HttpResponse(
-        RenderizarLayoutBase(Titulo, ConteudoPrincipal, RotaAtiva="fornecedores")
+        RenderizarLayoutBase(Titulo, ConteudoPrincipal, RotaAtiva="fornecedores", Request=Request)
     )
 
 

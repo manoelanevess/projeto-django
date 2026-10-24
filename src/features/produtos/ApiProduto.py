@@ -1,7 +1,9 @@
 """Acesso aos dados persistidos da feature de produtos."""
 from django.db.models import F, Prefetch, Q
 
-from .models import LoteEstoque, Produto
+from componentes.NomesCadastro import NormalizarNomeCadastro
+
+from .models import CategoriaProduto, LoteEstoque, Produto
 from .LogicaCodigoBarras import NormalizarCodigoBarras
 
 
@@ -100,13 +102,10 @@ def BuscarProdutos(Busca="", Estoque="", Categoria="", Fornecedor="", BuscaPorIn
 
 
 def BuscarCategoriasProdutos():
-    return list(
-        Produto.objects.filter(Ativo=True)
-        .exclude(Categoria="")
-        .order_by("Categoria")
-        .values_list("Categoria", flat=True)
-        .distinct()
-    )
+    Categorias = set(CategoriaProduto.objects.values_list("Nome", flat=True))
+    Categorias.update(Produto.objects.exclude(Categoria="").order_by()
+                      .values_list("Categoria", flat=True).distinct())
+    return sorted({NormalizarNomeCadastro(Nome) for Nome in Categorias if Nome.strip()}, key=str.casefold)
 
 
 def BuscarProdutosParaVenda(Busca):

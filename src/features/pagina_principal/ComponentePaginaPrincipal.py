@@ -6,6 +6,7 @@ from django.http import HttpResponse
 from django.middleware.csrf import get_token as ObterTokenCsrf
 
 from componentes.LayoutBase import RenderizarLayoutBase
+from componentes.PagamentoCarrinho import ObterScriptPagamentoCarrinho
 from componentes.BuscaIncremental import ObterScriptBuscaIncremental
 from features.vendas.ComponenteCarrinho import ConsumirMensagem
 from features.vendas.ComponenteLeitorCodigoBarras import ObterComplementoLeitorCodigoBarras
@@ -140,13 +141,17 @@ def RenderizarPagamentoPainel(ResumoCarrinho, TokenCsrf, CarrinhosAbertos):
                     PIX
                 </label>
                 <label>
+                    <input type="radio" name="forma_pagamento" value="pix_dinheiro">
+                    PIX + dinheiro
+                </label>
+                <label>
                     <input type="radio" name="forma_pagamento" value="conta_cliente">
                     Conta
                 </label>
             </fieldset>
 
             <div class="DinheiroPainel" data-area-dinheiro>
-                <label for="ValorRecebido-{NumeroCarrinho}">Valor recebido</label>
+                <label for="ValorRecebido-{NumeroCarrinho}">Recebido em dinheiro</label>
                 <input
                     id="ValorRecebido-{NumeroCarrinho}"
                     class="CampoFormulario"
@@ -158,16 +163,25 @@ def RenderizarPagamentoPainel(ResumoCarrinho, TokenCsrf, CarrinhosAbertos):
                     data-valor-recebido
                     required
                 >
-                <div class="TrocoPainel">
-                    <span>Troco</span>
-                    <output data-troco>R$ 0,00</output>
-                </div>
+            </div>
+
+            <div class="PixPainel" data-area-pix hidden>
+                <label for="ValorPix-{NumeroCarrinho}">Valor no PIX</label>
+                <input id="ValorPix-{NumeroCarrinho}" class="CampoFormulario" name="valor_pix"
+                    type="text" inputmode="decimal" placeholder="R$ 0,00" autocomplete="off" disabled>
+            </div>
+
+            <div class="TrocoPainel" data-area-troco>
+                <span>Troco</span>
+                <output data-troco aria-live="polite">R$ 0,00</output>
             </div>
 
             <button class="BotaoConcluirPainel" type="submit">Concluir compra</button>
         </form>
 
-        <form method="post" action="/carrinho/cancelar" onsubmit="return confirm('Cancelar este carrinho?');">
+        <form method="post" action="/carrinho/cancelar" data-confirmar="Cancelar atendimento?"
+              data-confirmar-descricao="Os itens e o nome do cliente serão descartados. O carrinho continuará aberto para um novo atendimento."
+              data-confirmar-acao="Cancelar atendimento" data-confirmar-cancelar="Continuar atendendo">
             {CamposRetorno}
             <button class="BotaoCancelarPainel" type="submit">Cancelar carrinho</button>
         </form>
@@ -503,8 +517,8 @@ def ObterEstilosPaginaPrincipal():
         .ResultadoProdutoPainel small { margin-top: 3px; color: #667482; }
         .LinhaNomeProduto { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
         .MarcaProduto { color: #202b36; font-size: 12px; font-weight: 600; }
-        .FormularioResultadoPainel { display: grid; grid-template-columns: 82px 1fr; gap: 7px; }
-        .FormularioResultadoPainel input[type="number"] {
+        .FormularioResultadoPainel { display: grid; grid-template-columns: 124px 1fr; gap: 7px; }
+        .FormularioResultadoPainel input[name="quantidade"] {
             min-width: 0;
             min-height: 38px;
             padding: 0 8px;
@@ -582,7 +596,9 @@ def ObterEstilosPaginaPrincipal():
 
         .PagamentoPainel legend { margin-bottom: 7px; color: #52616f; font-size: 13px; font-weight: 700; }
         .PagamentoPainel fieldset label { display: flex; align-items: center; gap: 5px; font-size: 13px; }
+        .PixPainel > label,
         .DinheiroPainel > label { display: block; margin-bottom: 6px; color: #52616f; font-size: 12px; font-weight: 700; }
+        .PixPainel { margin-top: 12px; }
         .TrocoPainel { margin: 8px 0 12px; display: flex; justify-content: space-between; font-size: 13px; }
         .TrocoPainel output { font-weight: 700; }
 
@@ -652,6 +668,33 @@ def ObterEstilosPaginaPrincipal():
             }
         }
     </style>
+    """
+
+
+def ObterScriptRolagemPaginaPrincipal():
+    return """
+    <script>
+        (() => {
+            const CamposEdicao = 'input, select, textarea, [contenteditable]:not([contenteditable="false"])';
+            document.addEventListener("keydown", (Evento) => {
+                if (Evento.defaultPrevented || Evento.isComposing || Evento.altKey || Evento.ctrlKey || Evento.metaKey || Evento.shiftKey
+                    || document.querySelector("dialog[open]")) return;
+                const CampoEdicao = Evento.target.closest?.(CamposEdicao);
+                if (Evento.key === "Escape" && CampoEdicao) {
+                    Evento.preventDefault();
+                    document.querySelector("main").focus({ preventScroll: true });
+                    return;
+                }
+                if (CampoEdicao || !["ArrowUp", "ArrowDown"].includes(Evento.key)) return;
+                Evento.preventDefault();
+                const ReduzirMovimento = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+                window.scrollBy({
+                    top: Evento.key === "ArrowDown" ? 80 : -80,
+                    behavior: Evento.repeat || ReduzirMovimento ? "instant" : "smooth",
+                });
+            });
+        })();
+    </script>
     """
 
 
@@ -819,48 +862,6 @@ def ObterScriptPaginaPrincipal(
                 Formulario.addEventListener("submit", AtualizarCamposAbertos);
             });
 
-            const InicializarPagamentos = () => document.querySelectorAll("[data-formulario-pagamento]").forEach((Formulario) => {
-                if (Formulario.dataset.inicializado) return;
-                Formulario.dataset.inicializado = "true";
-                const Total = Number(Formulario.dataset.total);
-                const AreaDinheiro = Formulario.querySelector("[data-area-dinheiro]");
-                const ValorRecebido = Formulario.querySelector("[data-valor-recebido]");
-                const Troco = Formulario.querySelector("[data-troco]");
-
-                const FormatarMoeda = (Valor) => Valor.toLocaleString("pt-BR", {
-                    style: "currency",
-                    currency: "BRL",
-                });
-
-                const AtualizarTroco = () => {
-                    const Recebido = Number(ValorRecebido.value.replace(".", "").replace(",", "."));
-                    if (!Number.isFinite(Recebido)) {
-                        Troco.textContent = "R$ 0,00";
-                        return;
-                    }
-                    const Diferenca = Recebido - Total;
-                    Troco.textContent = Diferenca >= 0
-                        ? FormatarMoeda(Diferenca)
-                        : `Faltam ${FormatarMoeda(Math.abs(Diferenca))}`;
-                };
-
-                const AtualizarPagamento = () => {
-                    const Forma = Formulario.querySelector('[name="forma_pagamento"]:checked').value;
-                    const Dinheiro = Forma === "dinheiro";
-                    AreaDinheiro.hidden = !Dinheiro;
-                    ValorRecebido.required = Dinheiro;
-                    if (Dinheiro) AtualizarTroco();
-                };
-
-                Formulario.querySelectorAll('[name="forma_pagamento"]').forEach((Opcao) => {
-                    Opcao.addEventListener("change", AtualizarPagamento);
-                });
-                ValorRecebido.addEventListener("input", AtualizarTroco);
-                AtualizarPagamento();
-            });
-            InicializarPagamentos();
-            document.addEventListener("carrinhos-atualizados", InicializarPagamentos);
-
             const CarrinhoPesquisado = __CARRINHO_PESQUISADO__;
             const BuscaInicial = __BUSCA_CARRINHO__;
             if (CarrinhoPesquisado && BuscaInicial) {
@@ -872,13 +873,6 @@ def ObterScriptPaginaPrincipal(
             }
 
             AtualizarPaineis();
-            document.querySelectorAll("[data-confirmar-fechamento]").forEach((Formulario) => {
-                Formulario.addEventListener("submit", (Evento) => {
-                    const Contador = document.querySelector(`[data-resumo-carrinho="${Formulario.elements.carrinho.value}"][data-parte-resumo="card-quantidade"]`);
-                    const Ocupado = Number.parseInt(Contador?.textContent || "0", 10) > 0 || Formulario.dataset.clienteIdentificado === "true";
-                    if (Ocupado && !window.confirm("Fechar este carrinho e descartar o atendimento? Os itens e o nome do cliente serão removidos.")) Evento.preventDefault();
-                });
-            });
             if (Abertos.has(CarrinhoPesquisado)) {
                 const Area = document.querySelector(".AreaAtendimentos");
                 const Painel = document.getElementById(`PainelCarrinho-${CarrinhoPesquisado}`);
@@ -1090,11 +1084,12 @@ def ComponentePaginaPrincipal(Request):
     return HttpResponse(
         RenderizarLayoutBase(
             "Página Principal",
-            ConteudoPrincipal + ObterScriptBuscaIncremental(
+            ConteudoPrincipal + ObterScriptRolagemPaginaPrincipal() + ObterScriptPagamentoCarrinho() + ObterScriptBuscaIncremental(
                 "FormularioConsultaEstoque", "BuscaConsultaEstoque", "ResultadosConsultaEstoque", "ErroConsultaEstoque",
             ) + ObterComplementoLeitorCodigoBarras(
                 CarrinhoPesquisado if CarrinhoPesquisado in CarrinhosAbertos else "1"
             ),
             RotaAtiva="pagina-principal",
+            Request=Request,
         )
     )

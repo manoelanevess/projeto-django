@@ -6,14 +6,17 @@ Projeto de controle de estoque utilizando Django para a matéria de Frameworks W
 
 - Login do proprietário, sem cadastro público
 - Cadastro de produtos
+- Identificação por código de barras com catálogo local, APIs de produtos e pesquisa opcional na web; preenchimento somente de nome e marca
 - Listagem com filtros
 - Controle de estoque
 - Cadastro e filtragem de fornecedores
-- Três carrinhos de compras para atendimentos simultâneos
+- Carrinhos independentes para atendimentos simultâneos, com três iniciais e abertura de mais carrinhos pelo botão `+`, sem limite fixo
 - Pagamento em dinheiro com troco ou PIX
 - Baixa automática de estoque ao concluir uma venda
 
 ## Arquitetura
+
+As convenções e regras do projeto estão no [Guia de Desenvolvimento](GuiaDesenvolvimento.md).
 
 O projeto será organizado por feature em `src/features/<nome-da-feature>`.
 O prefixo `@` será usado como alias para a pasta `src` nos arquivos JavaScript/TypeScript e nas ferramentas que leem o `jsconfig.json`.
@@ -85,33 +88,15 @@ Crie a conta do proprietário:
 python manage.py createsuperuser
 ```
 
-## Publicação
+## Identificação de Produtos
 
-A aplicação completa, incluindo as páginas HTML e as rotas do Django, é publicada em um único projeto na Vercel. O banco de produção usa PostgreSQL no Neon.
+O cadastro consulta primeiro os produtos e as identificações salvas no PostgreSQL. Depois tenta os catálogos especializados e, se necessário e configurado, pesquisa a web com IA. Somente nome e marca são sugeridos; categoria, validade e dados do estoque são informados pelo vendedor. O cadastro só é concluído ao confirmar o formulário.
 
-Variáveis de produção esperadas na Vercel:
+Open Food Facts funciona sem chave. Para ampliar a cobertura de produtos variados, configure `COSMOS_API_TOKEN` e `COSMOS_API_USER_AGENT` fornecidos pelo [Cosmos](https://api.cosmos.bluesoft.com.br/api). Ajuste `COSMOS_LIMITE_DIARIO` ao plano contratado (padrão conservador: 25). Confira as licenças aplicáveis aos dados antes de ativar a integração.
 
-```text
-DJANGO_SECRET_KEY=<segredo-exclusivo-de-producao>
-DJANGO_DEBUG=0
-DJANGO_ALLOWED_HOSTS=.vercel.app
-DJANGO_CSRF_TRUSTED_ORIGINS=https://*.vercel.app
-DJANGO_SECURE_SSL_REDIRECT=1
-DJANGO_SECURE_HSTS_SECONDS=31536000
-POSTGRES_DATABASE=<banco-do-neon>
-POSTGRES_USER=<usuario-do-neon>
-POSTGRES_PASSWORD=<senha-do-neon>
-POSTGRES_HOST=<host-pooler-do-neon>
-POSTGRES_PORT=5432
-POSTGRES_SSLMODE=require
-POSTGRES_CONN_MAX_AGE=0
-```
+A pesquisa com IA requer `OPENAI_API_KEY` e `PESQUISA_PRODUTO_IA_ATIVA=1`. Ela é opcional, desativada por padrão e tem cobrança própria. Configure limites de gastos no provedor antes de ativá-la. As credenciais ficam somente no `.env`, nunca no navegador ou Git. Reinicie o servidor após configurá-las.
 
-Antes da primeira publicação, aplique as migrations no Neon. A migração inicial de dados leva usuário, fornecedores e produtos do ambiente local, sem copiar vendas, itens de venda, resumos financeiros ou sessões.
-
-O ambiente local continua usando `POSTGRES_DB`. Em produção, o projeto também aceita `POSTGRES_DATABASE`, nome criado automaticamente pela integração Neon da Vercel.
-
-Como a configuração do Django fica em `src/configuracao`, o caminho WSGI inclui o prefixo `src` para que a Vercel localize o arquivo sem mover a estrutura do projeto.
+As sugestões ficam no catálogo local por 24 horas; dados confirmados no cadastro ou na edição têm prioridade e continuam disponíveis. Nenhuma fonte garante encontrar todos os códigos. Sem resultado confiável ou sem conexão, o cadastro manual permanece disponível. Consulte [ROTAS.md](ROTAS.md) para limites e detalhes das integrações.
 
 ## Decisão 01 — Organização por feature
 
@@ -223,27 +208,27 @@ Consequências: a rota `/` passa a apoiar diretamente o atendimento; indicadores
 
 Alternativa descartada: manter os indicadores como conteúdo principal e exigir que o proprietário navegue para outra tela antes de pesquisar produtos.
 
-## Decisão 10 — Três carrinhos e baixa transacional do estoque
+## Decisão 10 — Carrinhos independentes e baixa transacional do estoque
 
 Data: 11/10/2026
 
-Contexto: o comércio pode atender até três clientes ao mesmo tempo, com produtos vendidos por unidade ou por peso e pagamento em dinheiro ou PIX.
+Contexto: o comércio precisa atender vários clientes ao mesmo tempo, com produtos vendidos por unidade ou por peso e pagamento em dinheiro ou PIX.
 
-Decisão: manter três carrinhos independentes na sessão. A conclusão cria uma venda e seus itens no PostgreSQL e reduz o estoque quantitativo dentro de uma única transação; produtos por unidade aceitam apenas números inteiros e produtos por quilograma aceitam até três casas decimais.
+Decisão: iniciar cada sessão com três carrinhos independentes e permitir abrir outros pelo botão `+`, sem limite fixo, tanto na Página Principal quanto em Carrinhos. A conclusão cria uma venda e seus itens no PostgreSQL e reduz o estoque quantitativo dentro de uma única transação; produtos por unidade aceitam apenas números inteiros e produtos por quilograma aceitam até três casas decimais.
 
-Consequências: cancelar um carrinho não altera o estoque nem os outros atendimentos; dinheiro exige valor recebido e calcula troco; PIX conclui sem esse campo; falta de estoque impede toda a operação, sem baixa parcial.
+Consequências: cancelar um carrinho não altera o estoque nem os outros atendimentos; dinheiro exige valor recebido e calcula troco; PIX conclui sem esse campo; falta de estoque impede toda a operação, sem baixa parcial. Cada carrinho também pode ser fechado individualmente, com confirmação quando houver itens ou cliente identificado. Se todos forem fechados, o botão `+` permite abrir um novo atendimento.
 
 Alternativa descartada: usar um único carrinho ou reduzir o estoque ao adicionar produtos, pois isso impediria atendimentos simultâneos e reservaria mercadoria antes da conclusão da compra.
 
-## Decisão 11 — Carrinhos expansíveis na Página Principal
+## Decisão 11 — Carrinhos sempre abertos na Página Principal
 
 Data: 02/10/2026
 
-Contexto: o proprietário precisa consultar o estoque durante o atendimento e, em alguns momentos, acompanhar até três clientes sem sair da Página Principal.
+Contexto: o proprietário precisa consultar o estoque durante o atendimento e acompanhar vários clientes sem sair da Página Principal.
 
-Decisão: manter os cards de atendimentos em andamento como acionadores de painéis expansíveis. Até três painéis podem permanecer abertos lado a lado; cada um possui pesquisa por nome, categoria, marca ou fornecedor, seleção de quantidade ou peso, total e pagamento. A consulta de estoque da Página Principal é somente leitura, enquanto inclusão, edição e exclusão pertencem à área Estoque e à feature Produtos.
+Decisão: manter os cards dos atendimentos alinhados acima dos respectivos painéis, sempre abertos. Todos os carrinhos da sessão ficam lado a lado, com rolagem horizontal compartilhada quando necessário; cada um possui pesquisa por nome, categoria, marca ou fornecedor, seleção de quantidade ou peso, total e pagamento. O botão `+` abre mais carrinhos sem limite fixo. A consulta de estoque da Página Principal é somente leitura, enquanto inclusão, edição e exclusão pertencem à área Estoque e à feature Produtos.
 
-Consequências: os carrinhos não escondem a página, pois são inseridos abaixo dos cards e deslocam o estoque para baixo; no celular, os painéis usam rolagem horizontal; o proprietário consegue comparar marcas e estoques antes de adicionar um item.
+Consequências: os painéis permanecem abaixo dos cards, sem esconder o restante da página; a rolagem mantém os cards alinhados aos painéis, inclusive em telas menores; o proprietário consegue comparar marcas e estoques antes de adicionar um item. Fechar um carrinho remove apenas aquele atendimento, preservando os demais.
 
 Alternativa descartada: manter apenas uma aba de carrinho por vez ou abrir painéis sobrepostos ao conteúdo, pois essas opções dificultam acompanhar atendimentos simultâneos.
 
@@ -253,7 +238,7 @@ Data: 17/10/2026
 
 Contexto: o sistema será usado majoritariamente no computador do comércio, durante o atendimento no balcão.
 
-Decisão: projetar e validar primeiro a experiência desktop, incluindo os três carrinhos lado a lado. Manter apenas uma adaptação responsiva básica para evitar quebra de conteúdo em telas menores.
+Decisão: projetar e validar primeiro a experiência desktop, com os carrinhos abertos lado a lado e rolagem horizontal quando ultrapassarem a largura disponível. Manter apenas uma adaptação responsiva básica para evitar quebra de conteúdo em telas menores.
 
 Consequências: decisões de densidade, largura de tabelas e disposição simultânea dos carrinhos priorizam monitor e teclado; refinamentos específicos de experiência mobile não fazem parte do escopo atual.
 
@@ -265,9 +250,9 @@ Data: 17/10/2026
 
 Contexto: clientes conhecidos podem ser identificados durante o atendimento, mas a maioria das vendas não exige cadastro prévio do comprador.
 
-Decisão: permitir um nome opcional em cada carrinho. O nome permanece temporariamente na sessão, é copiado para a venda concluída e volta para `Carrinho 1`, `Carrinho 2` ou `Carrinho 3` quando o atendimento é concluído ou cancelado.
+Decisão: permitir um nome opcional em cada carrinho. O nome permanece temporariamente na sessão, é copiado para a venda concluída e a identificação volta para `Carrinho <número>` quando o atendimento é concluído ou cancelado, inclusive nos carrinhos abertos pelo botão `+`.
 
-Consequências: o histórico do Dashboard mostra quem realizou a compra quando o proprietário informou um nome; vendas sem identificação aparecem como `Não identificado`; os três carrinhos continuam independentes e reutilizáveis.
+Consequências: o histórico do Dashboard mostra quem realizou a compra quando o proprietário informou um nome; vendas sem identificação aparecem como `Não identificado`; todos os carrinhos continuam independentes e reutilizáveis.
 
 Alternativa descartada: criar um cadastro obrigatório de clientes, pois aumentaria o tempo de atendimento e não é necessário para registrar vendas ocasionais.
 
@@ -354,18 +339,6 @@ Decisão: tornar cada linha de venda recente expansível no próprio histórico.
 Consequências: até cinco vendas recentes carregam seus itens em uma consulta otimizada e permanecem fechadas até o clique; o controle também funciona por teclado no botão de expansão.
 
 Alternativa descartada: abrir uma página separada para cada venda, pois isso interromperia a consulta rápida e adicionaria navegação desnecessária.
-
-## Decisão 21 — Aplicação completa na Vercel e PostgreSQL no Neon
-
-Data: 03/10/2026
-
-Contexto: o projeto usa Django para entregar as páginas HTML e executar toda a lógica do sistema, sem um frontend independente. A aplicação precisa ficar disponível na internet e usar um banco PostgreSQL gerenciado.
-
-Decisão: publicar frontend e backend juntos em um único projeto Django na Vercel e usar um banco PostgreSQL no Neon com conexão agrupada e SSL obrigatório. Na carga inicial de produção, migrar usuário, fornecedores e produtos, sem levar vendas, itens de venda, resumos financeiros ou sessões do ambiente local.
-
-Consequências: um único deploy mantém navegação e backend na mesma origem; o banco de produção começa com o cadastro necessário para operar, mas com Dashboard e histórico de vendas zerados; segredos e dados de conexão ficam somente nas variáveis de ambiente da Vercel; a configuração aceita `POSTGRES_DATABASE` da integração Neon sem alterar o `POSTGRES_DB` usado localmente; o ponto de entrada WSGI informa o caminho completo em `src` exigido pela detecção da Vercel.
-
-Alternativa descartada: separar as páginas Django em outro projeto de frontend ou copiar o histórico de testes para produção, pois isso adicionaria complexidade sem benefício para a arquitetura atual.
 
 ## Decisão 22 — Entradas de estoque organizadas por lote
 

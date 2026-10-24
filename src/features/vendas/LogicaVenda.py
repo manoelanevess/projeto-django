@@ -7,6 +7,7 @@ from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 
+from componentes.NomesCadastro import NormalizarNomeCadastro
 from .models import (
     ItemRegistroVendaAntiga,
     RegistroVendaAntiga,
@@ -105,6 +106,7 @@ def ConsolidarVendasDeMesesAnteriores(DataReferencia=None):
                 VendaOriginalId=VendaAntiga.id,
                 NomeCliente=VendaAntiga.NomeCliente,
                 FormaPagamento=VendaAntiga.FormaPagamento,
+                ValorPix=VendaAntiga.ValorPix,
                 Total=VendaAntiga.Total,
                 Lucro=VendaAntiga.Lucro,
                 ValorRecebido=VendaAntiga.ValorRecebido,
@@ -116,7 +118,7 @@ def ConsolidarVendasDeMesesAnteriores(DataReferencia=None):
                 NovosItensAntigos.append(
                     ItemRegistroVendaAntiga(
                         Registro=RegistroAntigo,
-                        NomeProduto=ItemAntigo.NomeProduto,
+                        NomeProduto=NormalizarNomeCadastro(ItemAntigo.NomeProduto),
                         UnidadeVenda=ItemAntigo.UnidadeVenda,
                         Quantidade=ItemAntigo.Quantidade,
                         PrecoUnitario=ItemAntigo.PrecoUnitario,

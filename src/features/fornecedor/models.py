@@ -1,8 +1,10 @@
 """Modelos persistidos da feature de fornecedores."""
 from django.db import models
 
+from componentes.NomesCadastro import NomesCadastroMixin
 
-class Fornecedor(models.Model):
+class Fornecedor(NomesCadastroMixin, models.Model):
+    CamposNomesCadastro = ("Nome", "Cidade")
     Nome = models.CharField(max_length=120, unique=True)
     Telefone = models.CharField(max_length=20, blank=True)
     Email = models.EmailField(blank=True)

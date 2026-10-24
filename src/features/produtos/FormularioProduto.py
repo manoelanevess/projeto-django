@@ -5,18 +5,17 @@ from django import forms
 from django.db import transaction
 from django.db.models import Q
 
+from componentes.MascarasNumericas import EntradaNumerica
+from componentes.NomesCadastro import NormalizarNomeCadastro
 from features.fornecedor.models import Fornecedor
 
 from .models import LoteEstoque, Produto
+from .FormularioCategoria import CriarCampoCategoriaProduto
+from .LogicaIdentificacaoProduto import ConfirmarIdentificacaoProduto
 
 
 def NormalizarNomeProduto(Nome):
-    NomeLimpo = " ".join(str(Nome).split())
-
-    if not NomeLimpo:
-        return NomeLimpo
-
-    return NomeLimpo[0].upper() + NomeLimpo[1:]
+    return NormalizarNomeCadastro(Nome)
 
 
 def CriarCampoDataValidade():
@@ -59,23 +58,22 @@ class FormularioProduto(forms.ModelForm):
             "Nome": forms.TextInput(
                 attrs={"class": "CampoFormulario", "autofocus": True}
             ),
-            "Categoria": forms.TextInput(attrs={"class": "CampoFormulario"}),
             "Marca": forms.TextInput(attrs={"class": "CampoFormulario"}),
             "Fornecedor": forms.Select(attrs={"class": "CampoFormulario"}),
             "CodigoBarras": forms.TextInput(
                 attrs={"class": "CampoFormulario", "autocomplete": "off", "spellcheck": "false"}
             ),
             "UnidadeVenda": forms.Select(attrs={"class": "CampoFormulario"}),
-            "PrecoCusto": forms.NumberInput(
+            "PrecoCusto": EntradaNumerica(
                 attrs={"class": "CampoFormulario", "min": "0", "step": "0.01"}
             ),
-            "PrecoVenda": forms.NumberInput(
+            "PrecoVenda": EntradaNumerica(
                 attrs={"class": "CampoFormulario", "min": "0.01", "step": "0.01"}
             ),
-            "QuantidadeEstoque": forms.NumberInput(
+            "QuantidadeEstoque": EntradaNumerica(
                 attrs={"class": "CampoFormulario", "min": "0", "step": "0.001"}
             ),
-            "EstoqueMinimo": forms.NumberInput(
+            "EstoqueMinimo": EntradaNumerica(
                 attrs={"class": "CampoFormulario", "min": "0", "step": "0.001"}
             ),
             "Disponivel": forms.CheckboxInput(attrs={"class": "CampoCheckbox"}),
@@ -87,7 +85,7 @@ class FormularioProduto(forms.ModelForm):
             self.fields["Nome"].widget.attrs.pop("autofocus", None)
             self.fields["CodigoBarras"].widget.attrs["autofocus"] = True
 
-        self.fields["Categoria"].required = True
+        self.fields["Categoria"] = CriarCampoCategoriaProduto()
         self.fields["Fornecedor"].required = True
         self.fields["Fornecedor"].empty_label = "Selecione um fornecedor"
         self.fields["PrecoCusto"].required = True
@@ -108,7 +106,7 @@ class FormularioProduto(forms.ModelForm):
         ).order_by("Nome")
 
     def LimparTexto(self, NomeCampo):
-        return " ".join(str(self.cleaned_data.get(NomeCampo, "")).split())
+        return NormalizarNomeCadastro(self.cleaned_data.get(NomeCampo, ""))
 
     def clean_Nome(self):
         Nome = NormalizarNomeProduto(self.cleaned_data.get("Nome", ""))
@@ -172,10 +170,18 @@ class FormularioProduto(forms.ModelForm):
         LoteInicial = ProdutoCriado.LotesEstoque.get(Numero=1)
         LoteInicial.DataValidade = self.cleaned_data["DataValidade"]
         LoteInicial.save(update_fields=["DataValidade"])
+        ConfirmarIdentificacaoProduto(ProdutoCriado)
         return ProdutoCriado
 
 
 class FormularioEdicaoProduto(forms.ModelForm):
+    @transaction.atomic
+    def save(self, commit=True):
+        ProdutoSalvo = super().save(commit=commit)
+        if commit:
+            ConfirmarIdentificacaoProduto(ProdutoSalvo)
+        return ProdutoSalvo
+
     class Meta:
         model = Produto
         fields = [
@@ -190,10 +196,9 @@ class FormularioEdicaoProduto(forms.ModelForm):
             "Nome": forms.TextInput(
                 attrs={"class": "CampoFormulario", "autofocus": True}
             ),
-            "Categoria": forms.TextInput(attrs={"class": "CampoFormulario"}),
             "Marca": forms.TextInput(attrs={"class": "CampoFormulario"}),
             "UnidadeVenda": forms.Select(attrs={"class": "CampoFormulario"}),
-            "EstoqueMinimo": forms.NumberInput(
+            "EstoqueMinimo": EntradaNumerica(
                 attrs={"class": "CampoFormulario", "min": "0", "step": "0.001"}
             ),
             "CodigoBarras": forms.TextInput(
@@ -203,12 +208,14 @@ class FormularioEdicaoProduto(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["Categoria"].required = True
+        self.fields["Categoria"] = CriarCampoCategoriaProduto()
         self.fields["EstoqueMinimo"].required = False
         self.fields["UnidadeVenda"].disabled = True
+        if self.instance.ExigeQuantidadeInteira():
+            self.fields["EstoqueMinimo"].widget.attrs["step"] = "1"
 
     def LimparTexto(self, NomeCampo):
-        return " ".join(str(self.cleaned_data.get(NomeCampo, "")).split())
+        return NormalizarNomeCadastro(self.cleaned_data.get(NomeCampo, ""))
 
     def clean_Nome(self):
         Nome = NormalizarNomeProduto(self.cleaned_data.get("Nome", ""))
@@ -265,7 +272,7 @@ class FormularioLoteEstoque(forms.Form):
         min_value=Decimal("0.00"),
         max_digits=10,
         decimal_places=2,
-        widget=forms.NumberInput(
+        widget=EntradaNumerica(
             attrs={"class": "CampoFormulario", "min": "0", "step": "0.01"}
         ),
     )
@@ -273,7 +280,7 @@ class FormularioLoteEstoque(forms.Form):
         min_value=Decimal("0.01"),
         max_digits=10,
         decimal_places=2,
-        widget=forms.NumberInput(
+        widget=EntradaNumerica(
             attrs={"class": "CampoFormulario", "min": "0.01", "step": "0.01"}
         ),
     )
@@ -282,7 +289,7 @@ class FormularioLoteEstoque(forms.Form):
         min_value=Decimal("0.001"),
         max_digits=12,
         decimal_places=3,
-        widget=forms.NumberInput(
+        widget=EntradaNumerica(
             attrs={"class": "CampoFormulario", "min": "0.001", "step": "0.001"}
         ),
     )

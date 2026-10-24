@@ -3,6 +3,8 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from django.db import transaction
 
+from componentes.MascarasNumericas import NormalizarNumeroMascarado
+from componentes.NomesCadastro import NormalizarNomeCadastro
 from features.produtos.LogicaProduto import FormatarQuantidade, FormatarValorMoeda
 from features.produtos.models import LoteEstoque, Produto
 
@@ -20,7 +22,7 @@ PrefixoChaveLote = "Lote:"
 
 def ConverterQuantidade(Valor):
     try:
-        Quantidade = Decimal(str(Valor).strip().replace(",", "."))
+        Quantidade = Decimal(NormalizarNumeroMascarado(Valor))
         if not Quantidade.is_finite() or Quantidade > Decimal("999999999.999"):
             raise ValueError
         Quantidade = Quantidade.quantize(PrecisaoQuantidade, rounding=ROUND_HALF_UP)
@@ -161,7 +163,7 @@ def ObterNomesCarrinhosSessao(Request):
 def ObterNomePersonalizadoCarrinho(Request, NumeroCarrinho):
     Numero = ValidarNumeroCarrinho(NumeroCarrinho, Request)
     Nome = ObterNomesCarrinhosSessao(Request).get(Numero, "")
-    return str(Nome).strip()
+    return NormalizarNomeCadastro(Nome)
 
 
 def ObterNomeExibicaoCarrinho(Request, NumeroCarrinho):
@@ -171,7 +173,7 @@ def ObterNomeExibicaoCarrinho(Request, NumeroCarrinho):
 
 def DefinirNomeCarrinho(Request, NumeroCarrinho, NomeInformado):
     Numero = ValidarNumeroCarrinho(NumeroCarrinho, Request)
-    Nome = " ".join(str(NomeInformado or "").split())
+    Nome = NormalizarNomeCadastro(NomeInformado)
 
     if len(Nome) > 80:
         raise ValueError("O nome do cliente deve ter no máximo 80 caracteres.")
@@ -411,16 +413,24 @@ def MontarResumosCarrinhos(Request):
     ]
 
 
-def ConverterValorRecebido(Valor):
+def ConverterValorPagamento(Valor, Rotulo):
     try:
-        ValorRecebido = Decimal(str(Valor).strip().replace(",", "."))
+        Texto = NormalizarNumeroMascarado(Valor)
+        ValorPagamento = Decimal(Texto)
+        if not ValorPagamento.is_finite() or ValorPagamento.copy_abs() > Decimal("9999999999.99"):
+            raise ValueError
+        ValorPagamento = ValorPagamento.quantize(Centavo, rounding=ROUND_HALF_UP)
     except (InvalidOperation, TypeError, ValueError):
-        raise ValueError("Informe o valor recebido em dinheiro.") from None
+        raise ValueError(f"Informe um valor válido para {Rotulo}.") from None
 
-    if ValorRecebido < 0:
-        raise ValueError("O valor recebido não pode ser negativo.")
+    if ValorPagamento < 0:
+        raise ValueError(f"O valor de {Rotulo} não pode ser negativo.")
 
-    return ValorRecebido.quantize(Centavo, rounding=ROUND_HALF_UP)
+    return ValorPagamento
+
+
+def ConverterValorRecebido(Valor):
+    return ConverterValorPagamento(Valor, "dinheiro recebido")
 
 
 def ConcluirVenda(
@@ -428,6 +438,7 @@ def ConcluirVenda(
     NumeroCarrinho,
     FormaPagamento,
     ValorRecebidoInformado="",
+    ValorPixInformado="",
 ):
     Numero = ValidarNumeroCarrinho(NumeroCarrinho, Request)
     Carrinho = ObterCarrinhoSessao(Request, Numero)
@@ -436,10 +447,10 @@ def ConcluirVenda(
     if not Carrinho:
         raise ValueError("Adicione pelo menos um produto antes de concluir a compra.")
 
-    FormasPagamentoValidas = {Venda.DINHEIRO, Venda.PIX, Venda.CONTA_CLIENTE}
+    FormasPagamentoValidas = {Venda.DINHEIRO, Venda.PIX, Venda.PIX_DINHEIRO, Venda.CONTA_CLIENTE}
 
     if FormaPagamento not in FormasPagamentoValidas:
-        raise ValueError("Selecione dinheiro, PIX ou conta do cliente.")
+        raise ValueError("Selecione dinheiro, PIX, PIX + dinheiro ou conta do cliente.")
 
     if FormaPagamento == Venda.CONTA_CLIENTE and not NomeCliente:
         raise ValueError("Informe o nome do cliente para lançar na continha.")
@@ -497,32 +508,46 @@ def ConcluirVenda(
         ValorRecebido = None
         Troco = Decimal("0.00")
         ContaDaVenda = None
+        ValorPix = Total if FormaPagamento == Venda.PIX else Decimal("0.00")
 
-        if FormaPagamento == Venda.DINHEIRO:
+        if FormaPagamento == Venda.PIX_DINHEIRO:
+            ValorPix = ConverterValorPagamento(ValorPixInformado, "PIX")
+            if not Decimal("0.00") < ValorPix < Total:
+                raise ValueError("O valor no PIX deve ser maior que zero e menor que o total da compra.")
+
+        if FormaPagamento in {Venda.DINHEIRO, Venda.PIX_DINHEIRO}:
             ValorRecebido = ConverterValorRecebido(ValorRecebidoInformado)
+            TotalDinheiro = Total - ValorPix
 
-            if ValorRecebido < Total:
-                ValorFaltante = FormatarValorMoeda(Total - ValorRecebido)
+            if ValorRecebido < TotalDinheiro:
+                ValorFaltante = FormatarValorMoeda(TotalDinheiro - ValorRecebido)
                 raise ValueError(f"Faltam R$ {ValorFaltante} para concluir a compra.")
 
-            Troco = (ValorRecebido - Total).quantize(Centavo)
+            Troco = (ValorRecebido - TotalDinheiro).quantize(Centavo)
 
         if FormaPagamento == Venda.CONTA_CLIENTE:
-            ContaDaVenda, _ = ContaCliente.objects.select_for_update().get_or_create(
-                Proprietario=Request.user,
-                NomeCliente=NomeCliente,
-                defaults={"Ativa": True},
+            ContasDoCliente = ContaCliente.objects.select_for_update().filter(Proprietario=Request.user)
+            ContaDaVenda = (
+                ContasDoCliente.filter(NomeCliente=NomeCliente).first()
+                or ContasDoCliente.filter(NomeCliente__iexact=NomeCliente).order_by("id").first()
             )
+            if ContaDaVenda is None:
+                ContaDaVenda, _ = ContasDoCliente.get_or_create(
+                    NomeCliente=NomeCliente,
+                    defaults={"Proprietario": Request.user, "Ativa": True},
+                )
 
-            if not ContaDaVenda.Ativa:
+            if not ContaDaVenda.Ativa or ContaDaVenda.ExcluidaEm is not None:
                 ContaDaVenda.Ativa = True
-                ContaDaVenda.save(update_fields=["Ativa", "AtualizadaEm"])
+                ContaDaVenda.ExcluidaEm = None
+                ContaDaVenda.save(update_fields=["Ativa", "ExcluidaEm", "AtualizadaEm"])
 
         VendaConcluida = Venda.objects.create(
             Proprietario=Request.user,
             NomeCliente=NomeCliente,
             ContaCliente=ContaDaVenda,
             FormaPagamento=FormaPagamento,
+            ValorPix=ValorPix,
             Total=Total,
             Lucro=LucroTotal,
             ValorRecebido=ValorRecebido,

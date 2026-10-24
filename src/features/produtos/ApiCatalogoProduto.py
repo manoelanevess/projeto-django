@@ -13,7 +13,7 @@ from .LogicaCatalogoProduto import ExtrairDadosCatalogo
 from .LogicaCodigoBarras import EhCodigoGtin
 
 
-PrefixoCacheCatalogo = "CatalogoProduto:v3:"
+PrefixoCacheCatalogo = "CatalogoProduto:v4:"
 LimiteRespostaCatalogo = 65536
 CatalogosPermitidos = {
     "openfoodfacts.org": ("food", "Open Food Facts"),
@@ -46,7 +46,7 @@ def ConsultarCatalogoProduto(Codigo):
     if Referencia is not None:
         return {
             "Situacao": "encontrado",
-            "Dados": Referencia["Dados"].copy(),
+            "Dados": {Campo: Valor for Campo, Valor in Referencia["Dados"].items() if Campo in ("Nome", "Marca")},
             "Fonte": Referencia["Fonte"].copy(),
         }
 
@@ -57,11 +57,11 @@ def ConsultarCatalogoProduto(Codigo):
 
     # Espaca as consultas novas; leituras repetidas usam o resultado em cache.
     if not Cache.add(f"{PrefixoCacheCatalogo}Intervalo", True, timeout=5):
-        return {"Situacao": "indisponivel", "Dados": {}}
+        return {"Situacao": "aguardando", "Dados": {}, "TentarNovamenteEm": 5}
 
     Parametros = urlencode({
         "lc": "pt", "cc": "br", "tags_lc": "pt", "product_type": "all",
-        "fields": "code,product_type,product_name,product_name_pt,brands,categories_tags,categories_tags_pt",
+        "fields": "code,product_name,product_name_pt,brands",
     })
     Requisicao = RequisicaoHttp(
         f"https://world.openfoodfacts.org/api/v3.6/product/{Codigo}?{Parametros}",
@@ -89,7 +89,7 @@ def ConsultarCatalogoProduto(Codigo):
                 raise ValueError("Codigo retornado pelo catalogo diverge da consulta.")
             Resultado = {
                 "Situacao": "encontrado",
-                "Dados": ExtrairDadosCatalogo(ProdutoCatalogo, TipoCatalogo),
+                "Dados": ExtrairDadosCatalogo(ProdutoCatalogo),
                 "Fonte": Fonte,
             }
             DuracaoCache = 86400

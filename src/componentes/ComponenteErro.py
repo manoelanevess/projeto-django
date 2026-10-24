@@ -18,5 +18,6 @@ def ComponentePaginaNaoEncontrada(request, CaminhoNaoEncontrado=None, exception=
             "Página não encontrada",
             ConteudoPrincipal,
             RotaAtiva="",
+            Request=request,
         )
     )

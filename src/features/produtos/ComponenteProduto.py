@@ -158,7 +158,9 @@ def RenderizarLotesProduto(ProdutoEdicao, TokenCsrf):
             <form
                 method="post"
                 action="/estoque/{ProdutoEdicao.id}/lotes/{Lote.id}/encerrar"
-                onsubmit="return confirm('Encerrar este lote? Ele deixará de aparecer no carrinho.');"
+                data-confirmar="Encerrar lote #{NumeroLote}?"
+                data-confirmar-descricao="Este lote deixará de estar disponível para adicionar produtos aos carrinhos."
+                data-confirmar-acao="Encerrar lote"
             >
                 <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
                 <button class="BotaoEncerrarLote" type="submit">Encerrar</button>
@@ -169,7 +171,9 @@ def RenderizarLotesProduto(ProdutoEdicao, TokenCsrf):
         <form
             method="post"
             action="/estoque/{ProdutoEdicao.id}/lotes/{Lote.id}/excluir"
-            onsubmit="return confirm('Excluir este lote? O saldo dele será removido do estoque.');"
+            data-confirmar="Excluir lote #{NumeroLote}?"
+            data-confirmar-descricao="O saldo deste lote será removido do estoque. Confira o lote antes de continuar."
+            data-confirmar-acao="Excluir lote"
         >
             <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
             <button class="BotaoExcluirLote" type="submit">Excluir</button>
@@ -499,7 +503,7 @@ def ComponenteEditarProdutoComLotes(Request, ProdutoEdicao):
     """
 
     return HttpResponse(
-        RenderizarLayoutBase("Editar produto", ConteudoPrincipal + ObterScriptCodigoProduto(), RotaAtiva="estoque")
+        RenderizarLayoutBase("Editar produto", ConteudoPrincipal + ObterScriptCodigoProduto(), RotaAtiva="estoque", Request=Request)
     )
 
 
@@ -691,10 +695,7 @@ def ComponenteFormularioProduto(Request, ProdutoId=None):
         <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
         <div class="ConsultaCatalogo" id="ConsultaCatalogoProduto" role="status" aria-live="polite" hidden>
             <span id="MensagemCatalogoProduto"></span>
-            <span id="FonteCatalogoProduto" hidden>
-                Fonte: <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener noreferrer">Open Food Facts</a>
-                <span id="LicencaCatalogoProduto">(<a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL</a>)</span>.
-            </span>
+            <span id="FonteCatalogoProduto" hidden></span>
         </div>
         {ErrosGerais}
         {AvisoFornecedor}
@@ -789,6 +790,7 @@ def ComponenteFormularioProduto(Request, ProdutoId=None):
                 ConsultarInicial=Request.method == "GET" and bool(Request.GET.get("codigo", "").strip()),
             ),
             RotaAtiva="estoque",
+            Request=Request,
         )
     )
 

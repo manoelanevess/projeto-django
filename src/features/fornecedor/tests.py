@@ -51,7 +51,7 @@ class TesteManutencaoFornecedores(TestCase):
 
         self.assertRedirects(RespostaEdicao, "/fornecedores")
         FornecedorCriado.refresh_from_db()
-        self.assertEqual(FornecedorCriado.Nome, "Papelaria Central RS")
+        self.assertEqual(FornecedorCriado.Nome, "Papelaria Central Rs")
 
     def test_InativaFornecedorSemApagarCadastro(self):
         FornecedorCriado = Fornecedor.objects.create(Nome="Fornecedor Antigo")
@@ -74,7 +74,7 @@ class TesteManutencaoFornecedores(TestCase):
         Resposta = self.client.get("/fornecedores", {"busca": "  AGU  ", "inicio": "1"})
         self.assertContains(Resposta, "Águia Distribuidora")
         self.assertNotContains(Resposta, "Central Águia")
-        self.assertNotContains(Resposta, "Outro fornecedor")
+        self.assertNotContains(Resposta, "Outro Fornecedor")
         self.assertNotContains(Resposta, "Águia Antiga")
         self.assertEqual(Fornecedor.objects.count(), 4)
 

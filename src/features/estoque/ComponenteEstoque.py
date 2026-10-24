@@ -1,5 +1,6 @@
 """Componente da tela unificada de produtos e controle de estoque."""
 from html import escape
+from urllib.parse import urlencode
 
 from django.http import HttpResponse
 from django.middleware.csrf import get_token as ObterTokenCsrf
@@ -9,6 +10,7 @@ from componentes.BuscaIncremental import ObterScriptBuscaIncremental
 from features.fornecedor.ApiFornecedor import BuscarFornecedoresParaFiltroEstoque
 from features.produtos.ApiProduto import BuscarCategoriasProdutos
 from features.produtos.ComponenteProduto import ConsumirMensagemProduto
+from features.produtos.ComponenteCategoria import ObterFiltrosRetornoCategoria, RenderizarDialogoCategoria
 from features.produtos.LogicaProduto import GerarResumoProdutos
 
 
@@ -106,7 +108,9 @@ def RenderizarProdutos(Produtos, TokenCsrf):
                         <form
                             method="post"
                             action="/estoque/{ProdutoEstoque['Id']}/excluir"
-                            onsubmit="return confirm('Remover este produto do estoque?');"
+                            data-confirmar="Remover {escape(ProdutoEstoque['Nome'])}?"
+                            data-confirmar-descricao="O produto sairá do estoque disponível. O histórico das vendas será preservado."
+                            data-confirmar-acao="Remover produto"
                         >
                             <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
                             <button
@@ -158,6 +162,8 @@ def ComponenteEstoque(Request):
         BuscaPorInicio=Request.GET.get("inicio") == "1",
     )
     TokenCsrf = ObterTokenCsrf(Request)
+    FiltrosCategoria = ObterFiltrosRetornoCategoria(Request)
+    UrlNovaCategoria = "/estoque/categorias/nova?" + urlencode({Campo: Valor for Campo, Valor in FiltrosCategoria.items() if Valor})
     ProdutosHtml = RenderizarProdutos(ResumoProdutos["Produtos"], TokenCsrf)
     OpcoesCategorias = RenderizarOpcoesCategorias(
         BuscarCategoriasProdutos(),
@@ -207,6 +213,14 @@ def ComponenteEstoque(Request):
         .BuscaUnificadaEstoque {{ grid-column: 1 / -1; display: grid; gap: 6px; min-width: 0; }}
         .BuscaUnificadaEstoque label {{ font-size: 13px; font-weight: 700; color: #43576a; }}
         .AcoesFiltrosEstoque {{ display: flex; flex-wrap: wrap; gap: 10px; }}
+        .FiltroCategoriaEstoque {{ display: flex; gap: 6px; min-width: 0; }}
+        .BotaoNovaCategoria {{
+            flex: 0 0 40px; display: grid; place-items: center;
+            border: 1px solid #bdc9d4; border-radius: 5px; background: #fff;
+            color: #056da8; font-size: 24px; text-decoration: none;
+        }}
+        .BotaoNovaCategoria:hover {{ background: #e5f3fa; }}
+        .BotaoNovaCategoria:focus-visible {{ outline: 2px solid #0784ca; outline-offset: 2px; }}
 
         .MensagemOperacao {{
             margin-bottom: 18px;
@@ -301,9 +315,13 @@ def ComponenteEstoque(Request):
                 autofocus
             >
         </div>
-        <select class="CampoFormulario" name="categoria" aria-label="Filtrar por categoria">
-            {OpcoesCategorias}
-        </select>
+        <div class="FiltroCategoriaEstoque">
+            <select class="CampoFormulario" name="categoria" aria-label="Filtrar por categoria">
+                {OpcoesCategorias}
+            </select>
+            <a class="BotaoNovaCategoria" href="{escape(UrlNovaCategoria)}" aria-label="Adicionar categoria"
+               title="Adicionar categoria" aria-haspopup="dialog" aria-controls="DialogoNovaCategoria" data-adicionar-categoria>+</a>
+        </div>
         <select class="CampoFormulario" name="fornecedor" aria-label="Filtrar por fornecedor">
             {OpcoesFornecedores}
         </select>
@@ -315,6 +333,8 @@ def ComponenteEstoque(Request):
             <a class="BotaoSecundario" href="/estoque">Limpar</a>
         </div>
     </form>
+
+    {RenderizarDialogoCategoria(TokenCsrf, FiltrosCategoria)}
 
     <p class="MensagemOperacao Erro" id="ErroBuscaEstoque" role="status" hidden>Não foi possível pesquisar agora. Tente novamente.</p>
     <div id="ResultadosEstoque" aria-live="polite">
@@ -373,5 +393,5 @@ def ComponenteEstoque(Request):
     return HttpResponse(
         RenderizarLayoutBase("Estoque", ConteudoPrincipal + ObterScriptBuscaIncremental(
             "FormularioBuscaEstoque", "BuscaProdutoEstoque", "ResultadosEstoque", "ErroBuscaEstoque",
-        ), RotaAtiva="estoque")
+        ), RotaAtiva="estoque", Request=Request)
     )

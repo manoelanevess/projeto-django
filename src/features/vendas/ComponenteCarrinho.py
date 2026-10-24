@@ -10,6 +10,7 @@ from django.urls import reverse as ObterRota
 from django.views.decorators.http import require_POST as ExigirPost
 
 from componentes.LayoutBase import RenderizarLayoutBase
+from componentes.PagamentoCarrinho import ObterScriptPagamentoCarrinho
 from features.produtos.ApiProduto import (
     BuscarProdutosParaVenda,
     ObterLotesDisponiveisProduto,
@@ -155,12 +156,7 @@ def MontarProdutosParaPesquisa(ProdutosEncontrados):
 
 def RenderizarResultadosBusca(ProdutosEncontrados, TokenCsrf, NumeroCarrinho, Busca):
     if not Busca:
-        return """
-        <section class="EstadoBuscaVenda">
-            <h2>Pesquisar produtos</h2>
-            <p>Use o produto, a categoria, a marca ou o fornecedor na pesquisa.</p>
-        </section>
-        """
+        return ""
 
     Produtos = MontarProdutosParaPesquisa(ProdutosEncontrados)
 
@@ -280,7 +276,7 @@ def RenderizarPagamento(ResumoCarrinho, TokenCsrf, NumeroCarrinho):
     return f"""
     <section class="PagamentoVenda" aria-labelledby="TituloPagamento">
         <h2 id="TituloPagamento">Pagamento</h2>
-        <form method="post" action="/carrinho/concluir" id="FormularioPagamento" data-total="{ResumoCarrinho['Total']}">
+        <form method="post" action="/carrinho/concluir" id="FormularioPagamento" data-formulario-pagamento data-total="{ResumoCarrinho['Total']}">
             <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
             <input type="hidden" name="carrinho" value="{NumeroCarrinho}">
 
@@ -295,13 +291,17 @@ def RenderizarPagamento(ResumoCarrinho, TokenCsrf, NumeroCarrinho):
                     PIX
                 </label>
                 <label>
+                    <input type="radio" name="forma_pagamento" value="pix_dinheiro">
+                    PIX + dinheiro
+                </label>
+                <label>
                     <input type="radio" name="forma_pagamento" value="conta_cliente">
                     Conta
                 </label>
             </fieldset>
 
-            <div class="AreaDinheiro" id="AreaDinheiro">
-                <label for="ValorRecebido">Valor recebido</label>
+            <div class="AreaDinheiro" id="AreaDinheiro" data-area-dinheiro>
+                <label for="ValorRecebido">Recebido em dinheiro</label>
                 <div class="CampoMoeda">
                     <span>R$</span>
                     <input
@@ -314,16 +314,28 @@ def RenderizarPagamento(ResumoCarrinho, TokenCsrf, NumeroCarrinho):
                         required
                     >
                 </div>
-                <div class="ResultadoTroco">
-                    <span>Troco</span>
-                    <output id="TrocoCalculado">R$ 0,00</output>
+            </div>
+
+            <div class="AreaPix" data-area-pix hidden>
+                <label for="ValorPix">Valor no PIX</label>
+                <div class="CampoMoeda">
+                    <span>R$</span>
+                    <input id="ValorPix" name="valor_pix" type="text" inputmode="decimal"
+                        autocomplete="off" placeholder="0,00" disabled>
                 </div>
+            </div>
+
+            <div class="ResultadoTroco" data-area-troco>
+                <span>Troco</span>
+                <output id="TrocoCalculado" data-troco aria-live="polite">R$ 0,00</output>
             </div>
 
             <button class="BotaoConcluir" type="submit">Concluir compra</button>
         </form>
 
-        <form method="post" action="/carrinho/cancelar" onsubmit="return confirm('Cancelar este carrinho?');">
+        <form method="post" action="/carrinho/cancelar" data-confirmar="Cancelar atendimento?"
+              data-confirmar-descricao="Os itens e o nome do cliente serão descartados. O carrinho continuará aberto para um novo atendimento."
+              data-confirmar-acao="Cancelar atendimento" data-confirmar-cancelar="Continuar atendendo">
             <input type="hidden" name="csrfmiddlewaretoken" value="{TokenCsrf}">
             <input type="hidden" name="carrinho" value="{NumeroCarrinho}">
             <button class="BotaoCancelar" type="submit">Cancelar carrinho</button>
@@ -344,7 +356,7 @@ def ComponenteCarrinho(Request):
                 <button class="BotaoPrimario" type="submit" aria-label="Abrir novo carrinho" title="Abrir novo carrinho"
                     style="width: 42px; height: 42px; padding: 0; font-size: 28px">+</button>
             </form>
-        """, RotaAtiva="carrinho"))
+        """, RotaAtiva="carrinho", Request=Request))
     Busca = Request.GET.get("busca", "").strip()
     BuscaSegura = escape(Busca)
     TokenCsrf = escape(ObterTokenCsrf(Request))
@@ -493,7 +505,7 @@ def ComponenteCarrinho(Request):
 
         .FormularioAdicionar {{
             display: grid;
-            grid-template-columns: 100px 104px;
+            grid-template-columns: 132px 104px;
             gap: 6px 8px;
             align-items: end;
         }}
@@ -650,7 +662,7 @@ def ComponenteCarrinho(Request):
             margin: 0 0 16px;
             padding: 0;
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 8px;
             border: 0;
         }}
@@ -673,6 +685,7 @@ def ComponenteCarrinho(Request):
             cursor: pointer;
         }}
 
+        .AreaPix label,
         .AreaDinheiro label {{
             display: block;
             margin-bottom: 7px;
@@ -680,6 +693,8 @@ def ComponenteCarrinho(Request):
             font-size: 13px;
             font-weight: 700;
         }}
+
+        .AreaPix {{ margin-top: 12px; }}
 
         .CampoMoeda {{
             display: grid;
@@ -853,13 +868,6 @@ def ComponenteCarrinho(Request):
             }};
             ExibirAbaAtiva();
             window.addEventListener("resize", ExibirAbaAtiva);
-            document.querySelectorAll("[data-confirmar-fechamento]").forEach((Formulario) => {{
-                Formulario.addEventListener("submit", (Evento) => {{
-                    const Contador = document.querySelector(`[data-resumo-carrinho="${{Formulario.elements.carrinho.value}}"][data-parte-resumo="aba-quantidade"]`);
-                    const Ocupado = Number.parseInt(Contador?.textContent || "0", 10) > 0 || Formulario.dataset.clienteIdentificado === "true";
-                    if (Ocupado && !window.confirm("Fechar este carrinho e descartar o atendimento? Os itens e o nome do cliente serão removidos.")) Evento.preventDefault();
-                }});
-            }});
             const DialogoNome = document.getElementById("DialogoNomeCarrinho");
             const CampoNomeCliente = document.getElementById("NomeClienteCarrinho");
 
@@ -983,9 +991,10 @@ def ComponenteCarrinho(Request):
 
                     if (!Resposta.ok) throw new Error("Falha ao pesquisar produtos");
                     const Dados = await Resposta.json();
+                    if (ControleBusca !== ControleAtual) return;
                     RenderizarProdutos(Dados.Produtos, Busca);
                 }} catch (Erro) {{
-                    if (Erro.name !== "AbortError") {{
+                    if (Erro.name !== "AbortError" && ControleBusca === ControleAtual) {{
                         RenderizarEstadoBusca(
                             "Pesquisa indisponível",
                             "Não foi possível pesquisar agora. Tente novamente.",
@@ -1002,66 +1011,18 @@ def ComponenteCarrinho(Request):
                 const Busca = CampoBusca.value.trim();
                 clearTimeout(TemporizadorBusca);
                 if (ControleBusca) ControleBusca.abort();
+                ControleBusca = null;
                 AtualizarBuscaNaUrl(Busca);
 
                 if (!Busca) {{
                     AreaResultados.removeAttribute("aria-busy");
-                    RenderizarEstadoBusca(
-                        "Pesquisar produtos",
-                        "Use o produto, a categoria, a marca ou o fornecedor na pesquisa.",
-                    );
+                    AreaResultados.replaceChildren();
                     return;
                 }}
 
                 AreaResultados.setAttribute("aria-busy", "true");
                 TemporizadorBusca = window.setTimeout(() => PesquisarProdutos(Busca), 160);
             }});
-
-            const InicializarPagamento = () => {{
-                const Formulario = document.getElementById("FormularioPagamento");
-                if (!Formulario || Formulario.dataset.inicializado) return;
-                Formulario.dataset.inicializado = "true";
-
-                const OpcoesPagamento = Formulario.querySelectorAll('[name="forma_pagamento"]');
-                const AreaDinheiro = document.getElementById("AreaDinheiro");
-                const ValorRecebido = document.getElementById("ValorRecebido");
-                const TrocoCalculado = document.getElementById("TrocoCalculado");
-                const Total = Number(Formulario.dataset.total);
-
-                const FormatarMoeda = (Valor) => Valor.toLocaleString("pt-BR", {{
-                    style: "currency",
-                    currency: "BRL",
-                }});
-
-                const ConverterValor = (Valor) => Number(Valor.replace(".", "").replace(",", "."));
-
-                const AtualizarTroco = () => {{
-                    const Recebido = ConverterValor(ValorRecebido.value);
-                    if (!Number.isFinite(Recebido)) {{
-                        TrocoCalculado.textContent = "R$ 0,00";
-                        return;
-                    }}
-
-                    const Diferenca = Recebido - Total;
-                    TrocoCalculado.textContent = Diferenca >= 0
-                        ? FormatarMoeda(Diferenca)
-                        : `Faltam ${{FormatarMoeda(Math.abs(Diferenca))}}`;
-                }};
-
-                const AtualizarFormaPagamento = () => {{
-                    const Forma = Formulario.querySelector('[name="forma_pagamento"]:checked').value;
-                    const UsaDinheiro = Forma === "dinheiro";
-                    AreaDinheiro.hidden = !UsaDinheiro;
-                    ValorRecebido.required = UsaDinheiro;
-                    if (UsaDinheiro) AtualizarTroco();
-                }};
-
-                OpcoesPagamento.forEach((Opcao) => Opcao.addEventListener("change", AtualizarFormaPagamento));
-                ValorRecebido.addEventListener("input", AtualizarTroco);
-                AtualizarFormaPagamento();
-            }};
-            InicializarPagamento();
-            document.addEventListener("carrinhos-atualizados", InicializarPagamento);
         }})();
     </script>
     """
@@ -1069,8 +1030,9 @@ def ComponenteCarrinho(Request):
     return HttpResponse(
         RenderizarLayoutBase(
             "Carrinho de compras",
-            ConteudoPrincipal + ObterComplementoLeitorCodigoBarras(NumeroCarrinho),
+            ConteudoPrincipal + ObterScriptPagamentoCarrinho() + ObterComplementoLeitorCodigoBarras(NumeroCarrinho),
             RotaAtiva="carrinho",
+            Request=Request,
         )
     )
 
@@ -1154,6 +1116,7 @@ def ComponenteConcluirCompra(Request):
             NumeroCarrinho,
             Request.POST.get("forma_pagamento", ""),
             Request.POST.get("valor_recebido", ""),
+            Request.POST.get("valor_pix", ""),
         )
         TotalFormatado = FormatarValorMoeda(VendaConcluida.Total)
         DefinirMensagem(

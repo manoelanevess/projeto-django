@@ -8,6 +8,9 @@ from django.http import HttpResponse
 from django.middleware.csrf import get_token as ObterTokenCsrf
 from django.shortcuts import redirect as Redirecionar
 
+from componentes.NavegacaoCampos import ObterScriptNavegacaoCampos
+from componentes.AvisosSistema import ObterEstilosAvisos
+from .ApiConfiguracao import ObterNomeComercio, ObterSiglaComercio
 
 def ComponenteLogin(Request):
     if Request.user.is_authenticated:
@@ -37,6 +40,9 @@ def ComponenteLogin(Request):
 
     TokenCsrf = escape(ObterTokenCsrf(Request))
     NomeUsuarioSeguro = escape(NomeUsuario)
+    NomeComercio = ObterNomeComercio(Request)
+    NomeComercioSeguro = escape(NomeComercio)
+    SiglaComercio = escape(ObterSiglaComercio(NomeComercio))
 
 
     return HttpResponse(
@@ -46,7 +52,7 @@ def ComponenteLogin(Request):
         <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>Login · Controle de Estoque</title>
+            <title>Login · {NomeComercioSeguro}</title>
             <style>
                 * {{
                     box-sizing: border-box;
@@ -211,13 +217,14 @@ def ComponenteLogin(Request):
                     }}
                 }}
             </style>
+            {ObterEstilosAvisos()}
         </head>
         <body>
             <main class="TelaLogin">
-                <section class="MarcaLogin" aria-label="Controle de Estoque">
-                    <div class="SimboloMarca">EN</div>
+                <section class="MarcaLogin" aria-label="{NomeComercioSeguro}">
+                    <div class="SimboloMarca">{SiglaComercio}</div>
                     <div>
-                        <h1>Estoque Nuvem</h1>
+                        <h1>{NomeComercioSeguro}</h1>
                         <p>Controle de estoque do seu comércio em um só lugar.</p>
                     </div>
                 </section>
@@ -257,6 +264,7 @@ def ComponenteLogin(Request):
                     </form>
                 </section>
             </main>
+            {ObterScriptNavegacaoCampos()}
         </body>
         </html>
         """

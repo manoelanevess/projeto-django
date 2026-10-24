@@ -16,7 +16,6 @@ from .LogicaCodigoBarras import EhCodigoGtin
 
 LimiteRespostaPesquisa = 262144
 TempoLimitePesquisa = 30
-CategoriasPesquisa = ("", "Alimentos", "Farmácia", "Ferragem", "Limpeza")
 
 
 def PesquisaWebEstaConfigurada():
@@ -77,13 +76,12 @@ def ExtrairSugestaoPesquisa(Resposta, Codigo):
 
     Nome = LimparTextoCatalogo(Sugestao.get("Nome"), 120)
     Marca = LimparTextoCatalogo(LimparTextoCatalogo(Sugestao.get("Marca"), 80).lower(), 80)
-    Categoria = Sugestao.get("Categoria")
-    if not Nome or Categoria not in CategoriasPesquisa:
+    if not Nome:
         raise ValueError("Dados do produto invalidos.")
     return {
         "Situacao": "encontrado",
         "Dados": {Campo: Valor for Campo, Valor in {
-            "Nome": Nome, "Marca": Marca, "Categoria": Categoria,
+            "Nome": Nome, "Marca": Marca,
         }.items() if Valor},
         "Fonte": {"Nome": SepararUrl(FonteUrl).hostname, "Url": FonteUrl, "PesquisaWeb": True},
     }
@@ -94,7 +92,7 @@ def PesquisarProdutoNaWeb(Codigo, UsuarioId):
         return {"Situacao": "codigo_nao_consultavel", "Dados": {}}
     if not PesquisaWebEstaConfigurada():
         return {"Situacao": "nao_configurada", "Dados": {}}
-    Prefixo = f"PesquisaProdutoWeb:v1:{Configuracoes.PESQUISA_PRODUTO_IA_MODELO}:"
+    Prefixo = f"PesquisaProdutoWeb:v2:{Configuracoes.PESQUISA_PRODUTO_IA_MODELO}:"
     Chave = f"{Prefixo}{Codigo}"
     Resultado = Cache.get(Chave)
     if Resultado is not None:
@@ -121,9 +119,8 @@ def PesquisarProdutoNaWeb(Codigo, UsuarioId):
             **{Campo: {"type": "string"} for Campo in (
                 "Codigo", "Nome", "Marca", "FonteUrl", "Evidencia",
             )},
-            "Categoria": {"type": "string", "enum": list(CategoriasPesquisa)},
         },
-        "required": ["Encontrado", "Codigo", "Nome", "Marca", "Categoria", "FonteUrl", "Evidencia"],
+        "required": ["Encontrado", "Codigo", "Nome", "Marca", "FonteUrl", "Evidencia"],
     }
     DadosRequisicao = {
         "model": Configuracoes.PESQUISA_PRODUTO_IA_MODELO,
@@ -138,10 +135,9 @@ def PesquisarProdutoNaWeb(Codigo, UsuarioId):
             "codigo exato ao nome e a variante/embalagem. FonteUrl deve ser essa pagina, nunca uma "
             "URL de busca. Evidencia deve reproduzir um trecho curto com o GTIN exato. Se houver "
             "divergencias ou faltar evidencia, retorne Encontrado=false e campos vazios. "
-            "Sugira em portugues: alimento perecivel ou nao = Alimentos; medicamento e higiene "
-            "pessoal = Farmácia; ferramenta e ferragem = Ferragem; limpeza domestica = Limpeza. "
-            "Categoria incerta deve ficar vazia. Nome ate 120 caracteres, marca ate 80 e minuscula. "
-            "Nao sugira validade, fornecedor, preco, quantidade nem estoque."
+            "Retorne somente nome e marca em portugues. Nome ate 120 caracteres, marca ate 80 "
+            "e minuscula. Marca desconhecida deve ficar vazia. Nao sugira categoria, validade, "
+            "fornecedor, preco, quantidade nem estoque."
         ),
         "input": f'Pesquise o produto de codigo de barras "{Codigo}" no Brasil.',
         "text": {"format": {"type": "json_schema", "name": "SugestaoProduto", "strict": True, "schema": Esquema}},

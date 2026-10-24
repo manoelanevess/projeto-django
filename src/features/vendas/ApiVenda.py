@@ -2,6 +2,7 @@
 from django.db.models import Q
 from django.utils import timezone
 
+from .LogicaVenda import ObterIntervaloDiaComercial
 from .models import RegistroVendaAntiga, Venda
 
 
@@ -15,7 +16,11 @@ def ContarVendasHoje(Proprietario=None):
 
 
 def BuscarVendasRecentes(Limite=5, Proprietario=None):
-    VendasRecentes = Venda.objects.select_related("Proprietario").prefetch_related(
+    InicioDiaComercial, FimDiaComercial = ObterIntervaloDiaComercial()
+    VendasRecentes = Venda.objects.filter(
+        CriadaEm__gte=InicioDiaComercial,
+        CriadaEm__lt=FimDiaComercial,
+    ).select_related("Proprietario").prefetch_related(
         "Itens"
     )
 

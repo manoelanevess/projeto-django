@@ -5,17 +5,21 @@ from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
+from componentes.NomesCadastro import NomesCadastroMixin
 from features.produtos.models import LoteEstoque, Produto
 
 
-class Venda(models.Model):
+class Venda(NomesCadastroMixin, models.Model):
+    CamposNomesCadastro = ("NomeCliente",)
     DINHEIRO = "dinheiro"
     PIX = "pix"
+    PIX_DINHEIRO = "pix_dinheiro"
     CONTA_CLIENTE = "conta_cliente"
 
     OpcoesFormaPagamento = [
         (DINHEIRO, "Dinheiro"),
         (PIX, "PIX"),
+        (PIX_DINHEIRO, "PIX + dinheiro"),
         (CONTA_CLIENTE, "Conta do cliente"),
     ]
 
@@ -33,6 +37,7 @@ class Venda(models.Model):
         blank=True,
     )
     FormaPagamento = models.CharField(max_length=20, choices=OpcoesFormaPagamento)
+    ValorPix = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     Total = models.DecimalField(max_digits=12, decimal_places=2)
     Lucro = models.DecimalField(
         max_digits=12,
@@ -61,7 +66,8 @@ class Venda(models.Model):
         return f"Venda #{self.pk} - R$ {self.Total}"
 
 
-class ItemVenda(models.Model):
+class ItemVenda(NomesCadastroMixin, models.Model):
+    CamposNomesCadastro = ("NomeProduto",)
     Venda = models.ForeignKey(
         Venda,
         on_delete=models.CASCADE,
@@ -104,7 +110,8 @@ class ItemVenda(models.Model):
         return f"{self.NomeProduto} - {self.Quantidade}"
 
 
-class ContaCliente(models.Model):
+class ContaCliente(NomesCadastroMixin, models.Model):
+    CamposNomesCadastro = ("NomeCliente",)
     Proprietario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -112,6 +119,7 @@ class ContaCliente(models.Model):
     )
     NomeCliente = models.CharField(max_length=80)
     Ativa = models.BooleanField(default=True)
+    ExcluidaEm = models.DateTimeField(null=True, blank=True)
     CriadaEm = models.DateTimeField(auto_now_add=True)
     AtualizadaEm = models.DateTimeField(auto_now=True)
 
@@ -165,7 +173,8 @@ class LancamentoContaCliente(models.Model):
         return f"{self.Conta.NomeCliente} - {self.get_Tipo_display()} - R$ {self.Valor}"
 
 
-class RegistroVendaAntiga(models.Model):
+class RegistroVendaAntiga(NomesCadastroMixin, models.Model):
+    CamposNomesCadastro = ("NomeCliente",)
     Proprietario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -174,6 +183,7 @@ class RegistroVendaAntiga(models.Model):
     VendaOriginalId = models.PositiveIntegerField()
     NomeCliente = models.CharField(max_length=80, blank=True)
     FormaPagamento = models.CharField(max_length=20)
+    ValorPix = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     Total = models.DecimalField(max_digits=12, decimal_places=2)
     Lucro = models.DecimalField(
         max_digits=12,
@@ -209,7 +219,8 @@ class RegistroVendaAntiga(models.Model):
         return f"Venda antiga #{self.VendaOriginalId} - R$ {self.Total}"
 
 
-class ItemRegistroVendaAntiga(models.Model):
+class ItemRegistroVendaAntiga(NomesCadastroMixin, models.Model):
+    CamposNomesCadastro = ("NomeProduto",)
     Registro = models.ForeignKey(
         RegistroVendaAntiga,
         on_delete=models.CASCADE,

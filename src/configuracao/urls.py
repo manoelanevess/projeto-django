@@ -12,7 +12,8 @@ from features.fornecedor.ComponenteFornecedor import (
     ComponenteFormularioFornecedor,
 )
 from features.pagina_principal.ComponentePaginaPrincipal import ComponentePaginaPrincipal
-from features.produtos.ComponenteCatalogoProduto import ComponenteConsultarCatalogoProduto, ComponentePesquisarCodigoWeb
+from features.produtos.ComponenteCatalogoProduto import ComponenteComplementarCodigo, ComponenteConsultarCatalogoProduto, ComponentePesquisarCodigoWeb
+from features.produtos.ComponenteCategoria import ComponenteFormularioCategoriaProduto
 from features.produtos.ComponenteProduto import (
     ComponenteAtualizarDataLote,
     ComponenteAtualizarValidadeLote,
@@ -24,6 +25,7 @@ from features.produtos.ComponenteProduto import (
     ComponenteRedirecionarProdutos,
 )
 from features.usuarios.ComponenteUsuario import ComponenteLogin, ComponenteLogout
+from features.usuarios.ComponenteConfiguracao import ComponenteConfiguracoes, ComponenteFotoPerfil
 from features.vendas.ComponenteCarrinho import (
     ComponenteAbrirCarrinho,
     ComponenteAdicionarItem,
@@ -37,6 +39,7 @@ from features.vendas.ComponenteCarrinho import (
 )
 from features.vendas.ComponenteContaCliente import (
     ComponenteContinhasClientes,
+    ComponenteExcluirContaCliente,
     ComponenteRegistrarPagamentoContaCliente,
 )
 from features.vendas.ComponenteHistoricoVenda import ComponenteHistoricoVendas
@@ -50,6 +53,8 @@ urlpatterns = [
     path("", ProtegerComponente(ComponentePaginaPrincipal), name="PaginaPrincipal"),
     path("login", ComponenteLogin, name="Login"),
     path("logout", ComponenteLogout, name="Logout"),
+    path("configuracoes", ProtegerComponente(ComponenteConfiguracoes), name="Configuracoes"),
+    path("configuracoes/foto-perfil", ProtegerComponente(ComponenteFotoPerfil), name="FotoPerfil"),
     path("carrinho", ProtegerComponente(ComponenteCarrinho), name="Carrinho"),
     path("carrinho/abrir", ProtegerComponente(ComponenteAbrirCarrinho), name="AbrirCarrinho"),
     path("carrinho/fechar", ProtegerComponente(ComponenteFecharCarrinho), name="FecharCarrinho"),
@@ -100,13 +105,20 @@ urlpatterns = [
         name="RegistrarPagamentoContaCliente",
     ),
     path(
+        "continhas/<int:ContaId>/excluir",
+        ProtegerComponente(ComponenteExcluirContaCliente),
+        name="ExcluirContaCliente",
+    ),
+    path(
         "produtos",
         ProtegerComponente(ComponenteRedirecionarProdutos),
         name="ListaProdutos",
     ),
     path("estoque", ProtegerComponente(ComponenteEstoque), name="Estoque"),
+    path("estoque/categorias/nova", ProtegerComponente(ComponenteFormularioCategoriaProduto), name="AdicionarCategoriaProduto"),
     path("estoque/ler-codigo", ProtegerComponente(ComponenteLerCodigoEstoque), name="LerCodigoEstoque"),
     path("estoque/pesquisar-codigo-web", ProtegerComponente(ComponentePesquisarCodigoWeb), name="PesquisarCodigoWeb"),
+    path("estoque/complementar-codigo", ProtegerComponente(ComponenteComplementarCodigo), name="ComplementarCodigo"),
     path(
         "estoque/consultar-codigo",
         ProtegerComponente(ComponenteConsultarCatalogoProduto),

@@ -1,4 +1,12 @@
 """Layout compartilhado pelas telas principais do sistema."""
+from html import escape
+
+from features.usuarios.ApiConfiguracao import ObterFotoPerfilUrl, ObterNomeComercio, ObterSiglaComercio
+
+from .MascarasNumericas import ObterScriptMascarasNumericas
+from .NavegacaoCampos import ObterScriptNavegacaoCampos
+from .NomesCadastro import ObterScriptNomesCadastro
+from .AvisosSistema import ObterComponenteAvisos
 
 
 MenusNavegacao = [
@@ -40,8 +48,15 @@ def GerarMenuNavegacao(RotaAtiva):
     return "".join(ItensMenu)
 
 
-def RenderizarLayoutBase(TituloPagina, ConteudoPrincipal, RotaAtiva="pagina-principal"):
+def RenderizarLayoutBase(TituloPagina, ConteudoPrincipal, RotaAtiva="pagina-principal", Request=None):
     ItensMenu = GerarMenuNavegacao(RotaAtiva)
+    NomeComercio = ObterNomeComercio(Request)
+    NomeComercioSeguro = escape(NomeComercio)
+    SiglaComercio = escape(ObterSiglaComercio(NomeComercio))
+    FotoUrl = ObterFotoPerfilUrl(Request)
+    Avatar = (f'<img class="FotoPerfilTopo" src="{escape(FotoUrl)}" alt="Foto de perfil">'
+              if FotoUrl else '<span class="FotoPerfilTopo InicialPerfilTopo" aria-hidden="true">P</span>')
+    ConfiguracaoAtiva = ' aria-current="page"' if RotaAtiva == "configuracoes" else ""
 
     return f"""
     <!doctype html>
@@ -49,7 +64,7 @@ def RenderizarLayoutBase(TituloPagina, ConteudoPrincipal, RotaAtiva="pagina-prin
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>{TituloPagina} · Controle de Estoque</title>
+        <title>{escape(TituloPagina)} · {NomeComercioSeguro}</title>
         <style>
             * {{
                 box-sizing: border-box;
@@ -151,6 +166,7 @@ def RenderizarLayoutBase(TituloPagina, ConteudoPrincipal, RotaAtiva="pagina-prin
                 font-size: 17px;
                 font-weight: 700;
                 color: #2b3843;
+                overflow-wrap: anywhere;
             }}
 
             .AcoesTopo {{
@@ -165,10 +181,21 @@ def RenderizarLayoutBase(TituloPagina, ConteudoPrincipal, RotaAtiva="pagina-prin
                 text-decoration: none;
             }}
 
+            .AcoesTopo {{ flex-shrink: 0; }}
+            .AcessoProprietario {{ display: inline-flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; }}
+            .AcessoProprietario:hover, .AcessoProprietario[aria-current="page"] {{ color: #056da8; background: #e5f3fa; }}
+            .AcessoProprietario:focus-visible {{ outline: 2px solid #0784ca; outline-offset: 2px; }}
+            .FotoPerfilTopo {{ width: 30px; height: 30px; border-radius: 50%; object-fit: cover; flex: 0 0 30px; }}
+            .InicialPerfilTopo {{ display: grid; place-items: center; background: #e5f3fa; color: #056da8; font-size: 13px; font-weight: bold; }}
+
             main {{
                 width: min(1120px, 100%);
                 margin: 0 auto;
                 padding: 26px;
+            }}
+
+            main[tabindex="-1"]:focus {{
+                outline: none;
             }}
 
             h1 {{
@@ -418,16 +445,18 @@ def RenderizarLayoutBase(TituloPagina, ConteudoPrincipal, RotaAtiva="pagina-prin
     <body>
         <div class="TelaAplicacao">
             <aside class="BarraLateral" aria-label="Menu principal">
-                <div class="MarcaLateral">CE</div>
+                <div class="MarcaLateral" title="{NomeComercioSeguro}">{SiglaComercio}</div>
                 {ItensMenu}
             </aside>
 
             <div class="AreaPrincipal">
                 <header class="Topo">
-                    <div class="MarcaTopo">Controle de estoque</div>
+                    <div class="MarcaTopo">{NomeComercioSeguro}</div>
                     <nav class="AcoesTopo" aria-label="Ações rápidas">
                         <a href="/">Início</a>
-                        <span>Proprietário</span>
+                        <a class="AcessoProprietario" href="/configuracoes" title="Abrir configurações"{ConfiguracaoAtiva}>
+                            {Avatar}<span>Proprietário</span>
+                        </a>
                         <a href="/logout">Sair</a>
                     </nav>
                 </header>
@@ -437,6 +466,10 @@ def RenderizarLayoutBase(TituloPagina, ConteudoPrincipal, RotaAtiva="pagina-prin
                 </main>
             </div>
         </div>
+        {ObterScriptMascarasNumericas()}
+        {ObterScriptNavegacaoCampos()}
+        {ObterScriptNomesCadastro()}
+        {ObterComponenteAvisos()}
     </body>
     </html>
     """

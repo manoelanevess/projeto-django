@@ -1,7 +1,8 @@
 """Componentes da página de continhas dos clientes."""
 from html import escape
+from urllib.parse import urlencode
 
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.middleware.csrf import get_token as ObterTokenCsrf
 from django.shortcuts import redirect as Redirecionar
 from django.utils import timezone
@@ -13,8 +14,10 @@ from features.produtos.LogicaProduto import FormatarValorMoeda
 from .LogicaContaCliente import (
     BuscarContinhasClientes,
     CalcularSaldoConta,
+    ExcluirContaCliente,
     RegistrarPagamentoContaCliente,
 )
+from .models import ContaCliente
 
 
 ChaveMensagemContaCliente = "MensagemContaCliente"
@@ -86,12 +89,15 @@ def RenderizarLancamentosConta(Conta):
     """
 
 
-def RenderizarContinhas(Contas):
+def RenderizarContinhas(Contas, Busca=""):
     Cartoes = []
 
     for Conta in Contas:
         Saldo = CalcularSaldoConta(Conta)
         ClasseSaldo = "SaldoAberto" if Saldo > 0 else "SaldoQuitado"
+        PodeExcluir = Saldo == 0
+        EstadoBotaoExcluir = "" if PodeExcluir else " disabled"
+        TituloExcluir = "Apagar continha" if PodeExcluir else "Disponível apenas para continhas com saldo zerado"
         Cartoes.append(
             f"""
             <article class="ContaCliente">
@@ -100,7 +106,18 @@ def RenderizarContinhas(Contas):
                         <h2>{escape(Conta.NomeCliente)}</h2>
                         <span>{'Ativa' if Conta.Ativa else 'Inativa'}</span>
                     </div>
-                    <strong class="{ClasseSaldo}">R$ {FormatarValorMoeda(Saldo)}</strong>
+                    <div class="AcoesContaCliente">
+                        <strong class="{ClasseSaldo}">R$ {FormatarValorMoeda(Saldo)}</strong>
+                        <form method="post" action="/continhas/{Conta.id}/excluir" data-excluir-continha
+                              data-confirmar="Remover continha de {escape(Conta.NomeCliente)}?"
+                              data-confirmar-descricao="A continha quitada sairá da lista. O histórico de vendas será preservado."
+                              data-confirmar-acao="Remover continha">
+                            <input type="hidden" name="csrfmiddlewaretoken" value="__TOKEN_CSRF__">
+                            <input type="hidden" name="busca" value="{escape(Busca)}">
+                            <button class="BotaoExcluirConta" type="submit"{EstadoBotaoExcluir}
+                                aria-label="Apagar continha de {escape(Conta.NomeCliente)}" title="{TituloExcluir}">&#128465;</button>
+                        </form>
+                    </div>
                 </div>
 
                 {RenderizarLancamentosConta(Conta)}
@@ -151,7 +168,7 @@ def ComponenteContinhasClientes(Request):
     Busca = Request.GET.get("busca", "").strip()
     Contas = BuscarContinhasClientes(Request.user, Busca)
     Mensagem = ConsumirMensagemContaCliente(Request)
-    ConteudoContinhas = RenderizarContinhas(Contas).replace(
+    ConteudoContinhas = RenderizarContinhas(Contas, Busca).replace(
         "__TOKEN_CSRF__",
         escape(ObterTokenCsrf(Request)),
     )
@@ -166,8 +183,9 @@ def ComponenteContinhasClientes(Request):
             gap: 16px;
         }}
         .CabecalhoContinhas h1 {{ margin: 0; }}
-        .ListaContinhas {{ display: grid; gap: 16px; }}
+        .ListaContinhas {{ display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }}
         .ContaCliente {{
+            min-width: 0;
             padding: 18px;
             border: 1px solid #d6e0e6;
             border-radius: 6px;
@@ -177,11 +195,24 @@ def ComponenteContinhasClientes(Request):
         .CabecalhoContaCliente {{
             margin-bottom: 14px;
             display: flex;
-            align-items: baseline;
+            align-items: center;
             justify-content: space-between;
             gap: 16px;
         }}
         .CabecalhoContaCliente h2 {{ margin: 0 0 4px; font-size: 20px; }}
+        .CabecalhoContaCliente > div:first-child {{ min-width: 0; }}
+        .CabecalhoContaCliente h2 {{ overflow-wrap: anywhere; }}
+        .AcoesContaCliente {{ display: flex; align-items: center; flex-shrink: 0; gap: 12px; }}
+        .AcoesContaCliente strong {{ white-space: nowrap; }}
+        .AcoesContaCliente form {{ margin: 0; }}
+        .BotaoExcluirConta {{
+            width: 34px; height: 34px; display: grid; place-items: center;
+            padding: 0; border: 1px solid #efc5c1; border-radius: 4px;
+            color: #a12c25; background: #fff0ef; font-size: 17px; cursor: pointer;
+        }}
+        .BotaoExcluirConta:disabled {{ opacity: 0.45; cursor: not-allowed; }}
+        .BotaoExcluirConta:enabled:hover {{ background: #fde3e0; }}
+        .BotaoExcluirConta:focus-visible {{ outline: 2px solid #a12c25; outline-offset: 2px; }}
         .CabecalhoContaCliente span,
         .TextoApoio {{ color: #667482; font-size: 13px; }}
         .CabecalhoContaCliente strong {{ font-size: 24px; }}
@@ -201,12 +232,14 @@ def ComponenteContinhasClientes(Request):
             align-items: end;
         }}
         .FormularioPagamentoConta label {{
+            min-width: 0;
             display: grid;
             gap: 6px;
             color: #52616f;
             font-size: 12px;
             font-weight: 700;
         }}
+        .FormularioPagamentoConta .CampoFormulario {{ min-width: 0; width: 100%; }}
         .MensagemOperacao {{
             margin-bottom: 18px;
             padding: 12px 14px;
@@ -318,6 +351,7 @@ def ComponenteContinhasClientes(Request):
             "Continhas dos clientes",
             ConteudoPrincipal,
             RotaAtiva="continhas",
+            Request=Request,
         )
     )
 
@@ -339,3 +373,17 @@ def ComponenteRegistrarPagamentoContaCliente(Request):
         DefinirMensagemContaCliente(Request, str(Erro), Tipo="erro")
 
     return Redirecionar("/continhas")
+
+
+@ExigirPost
+def ComponenteExcluirContaCliente(Request, ContaId):
+    try:
+        Conta = ExcluirContaCliente(Request.user, ContaId)
+        DefinirMensagemContaCliente(Request, f"Continha de {Conta.NomeCliente} removida.")
+    except ContaCliente.DoesNotExist:
+        raise Http404("Continha não encontrada.") from None
+    except ValueError as Erro:
+        DefinirMensagemContaCliente(Request, str(Erro), Tipo="erro")
+
+    Busca = Request.POST.get("busca", "").strip()
+    return Redirecionar(f"/continhas?{urlencode({'busca': Busca})}" if Busca else "/continhas")
