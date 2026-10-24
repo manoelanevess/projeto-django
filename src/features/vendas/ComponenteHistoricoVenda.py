@@ -9,6 +9,7 @@ from componentes.BuscaIncremental import ObterScriptBuscaIncremental
 from features.produtos.LogicaProduto import FormatarQuantidade, FormatarValorMoeda
 
 from .ApiVenda import BuscarHistoricoVendas
+from .ComponentePagamento import RenderizarDivisaoPagamento
 from .FormularioHistoricoVenda import FormularioHistoricoVenda, ParametrosFiltrosHistorico
 from .LogicaVenda import ConsolidarVendasDeMesesAnteriores
 from .models import Venda
@@ -94,6 +95,7 @@ def RenderizarTabelaHistorico(VendasAtuais, RegistrosAntigos, FiltrosAtivos=Fals
             <tr class="LinhaDetalhesVenda" id="{IdDetalhes}" hidden>
                 <td colspan="6">
                     <div class="ConteudoDetalhesVenda">
+                        {RenderizarDivisaoPagamento(VendaAtual)}
                         <strong>Itens da venda</strong>
                         {RenderizarItensHistorico(VendaAtual.Itens.all())}
                     </div>
@@ -122,6 +124,7 @@ def RenderizarTabelaHistorico(VendasAtuais, RegistrosAntigos, FiltrosAtivos=Fals
             <tr class="LinhaDetalhesVenda" id="{IdDetalhes}" hidden>
                 <td colspan="6">
                     <div class="ConteudoDetalhesVenda">
+                        {RenderizarDivisaoPagamento(RegistroAntigo)}
                         <strong>Itens preservados</strong>
                         {RenderizarItensHistorico(RegistroAntigo.Itens.all())}
                     </div>
@@ -319,5 +322,6 @@ def ComponenteHistoricoVendas(Request):
                 "FormularioBuscaVendas", "FiltroVendaBusca", "ResultadosVendas", "ErroBuscaVendas",
             ),
             RotaAtiva="historico-vendas",
+            Request=Request,
         )
     )

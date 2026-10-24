@@ -39,12 +39,12 @@ class TesteConsultaEstoquePaginaPrincipal(TestCase):
         return [Item["Nome"] for Item in Dados["ConsultaEstoque"]["Produtos"]]
 
     def test_BuscaPorInicioIgnoraAcentosEMaiusculasSemIncluirMarcaOuFornecedor(self):
-        self.assertEqual(self.ObterNomesConsulta("AGU"), ["Água mineral"])
-        self.assertEqual(self.ObterNomesConsulta("00123"), ["Água mineral"])
+        self.assertEqual(self.ObterNomesConsulta("AGU"), ["Água Mineral"])
+        self.assertEqual(self.ObterNomesConsulta("00123"), ["Água Mineral"])
         self.assertEqual(self.ObterNomesConsulta("Distribuidora"), [])
 
     def test_LimparMostraTodosOsAtivosETermoAusenteRetornaVazio(self):
-        self.assertCountEqual(self.ObterNomesConsulta(""), ["Água mineral", "Pacote Água"])
+        self.assertCountEqual(self.ObterNomesConsulta(""), ["Água Mineral", "Pacote Água"])
         self.assertEqual(self.ObterNomesConsulta("inexistente"), [])
 
     def test_FormularioIncrementalMantemConsultaSomenteLeitura(self):

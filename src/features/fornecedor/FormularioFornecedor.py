@@ -1,6 +1,7 @@
 """Formulário de cadastro e edição de fornecedores."""
 from django import forms
 
+from componentes.NomesCadastro import NormalizarNomeCadastro
 from .models import Fornecedor
 
 
@@ -13,7 +14,7 @@ class FormularioFornecedor(forms.ModelForm):
                 attrs={"class": "CampoFormulario", "autofocus": True}
             ),
             "Telefone": forms.TextInput(
-                attrs={"class": "CampoFormulario", "placeholder": "(00) 00000-0000"}
+                attrs={"class": "CampoFormulario", "placeholder": "(00) 00000-0000", "type": "tel", "data-mascara": "telefone"}
             ),
             "Email": forms.EmailInput(attrs={"class": "CampoFormulario"}),
             "Cidade": forms.TextInput(attrs={"class": "CampoFormulario"}),
@@ -23,7 +24,7 @@ class FormularioFornecedor(forms.ModelForm):
         return " ".join(str(self.cleaned_data.get(NomeCampo, "")).split())
 
     def clean_Nome(self):
-        Nome = self.LimparTexto("Nome")
+        Nome = NormalizarNomeCadastro(self.cleaned_data.get("Nome", ""))
         FornecedoresIguais = Fornecedor.objects.filter(Nome__iexact=Nome)
 
         if self.instance.pk:
@@ -41,4 +42,4 @@ class FormularioFornecedor(forms.ModelForm):
         return self.cleaned_data.get("Email", "").strip().lower()
 
     def clean_Cidade(self):
-        return self.LimparTexto("Cidade")
+        return NormalizarNomeCadastro(self.cleaned_data.get("Cidade", ""))

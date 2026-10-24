@@ -133,6 +133,7 @@ def ObterComplementoLeitorCodigoBarras(NumeroInicial="1"):
                     if (!NovaParte) throw new Error("Resumo do carrinho indisponível.");
                     const FormaAnterior = Parte.querySelector('[name="forma_pagamento"]:checked')?.value;
                     const ValorAnterior = Parte.querySelector('[name="valor_recebido"]')?.value;
+                    const PixAnterior = Parte.querySelector('[name="valor_pix"]')?.value;
                     Parte.replaceChildren(...NovaParte.childNodes);
                     if (FormaAnterior) {
                         Parte.querySelectorAll('[name="forma_pagamento"]').forEach((Opcao) => {
@@ -140,6 +141,7 @@ def ObterComplementoLeitorCodigoBarras(NumeroInicial="1"):
                         });
                     }
                     if (ValorAnterior) Parte.querySelector('[name="valor_recebido"]').value = ValorAnterior;
+                    if (PixAnterior) Parte.querySelector('[name="valor_pix"]').value = PixAnterior;
                 }
                 document.dispatchEvent(new Event("carrinhos-atualizados"));
             };

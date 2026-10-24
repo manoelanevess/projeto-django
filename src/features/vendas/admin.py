@@ -51,6 +51,7 @@ class VendaAdmin(admin.ModelAdmin):
         "Total",
         "Lucro",
         "ValorRecebido",
+        "ValorPix",
         "Troco",
         "CriadaEm",
     )
@@ -125,6 +126,7 @@ class RegistroVendaAntigaAdmin(admin.ModelAdmin):
         "Total",
         "Lucro",
         "ValorRecebido",
+        "ValorPix",
         "Troco",
         "CriadaEm",
         "ConsolidadaEm",

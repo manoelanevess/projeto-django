@@ -108,7 +108,10 @@ def RenderizarContinhas(Contas, Busca=""):
                     </div>
                     <div class="AcoesContaCliente">
                         <strong class="{ClasseSaldo}">R$ {FormatarValorMoeda(Saldo)}</strong>
-                        <form method="post" action="/continhas/{Conta.id}/excluir" data-excluir-continha>
+                        <form method="post" action="/continhas/{Conta.id}/excluir" data-excluir-continha
+                              data-confirmar="Remover continha de {escape(Conta.NomeCliente)}?"
+                              data-confirmar-descricao="A continha quitada sairá da lista. O histórico de vendas será preservado."
+                              data-confirmar-acao="Remover continha">
                             <input type="hidden" name="csrfmiddlewaretoken" value="__TOKEN_CSRF__">
                             <input type="hidden" name="busca" value="{escape(Busca)}">
                             <button class="BotaoExcluirConta" type="submit"{EstadoBotaoExcluir}
@@ -282,10 +285,6 @@ def ComponenteContinhasClientes(Request):
             const CampoBusca = document.getElementById("BuscaContaCliente");
             const AreaResultados = document.getElementById("ResultadosContinhas");
             const ErroBusca = document.getElementById("ErroBuscaContinhas");
-            AreaResultados.addEventListener("submit", (Evento) => {{
-                if (Evento.target.matches("[data-excluir-continha]")
-                    && !window.confirm("Apagar esta continha quitada? O histórico de vendas será preservado.")) Evento.preventDefault();
-            }});
             let TemporizadorBusca;
             let ControleBusca;
 
@@ -352,6 +351,7 @@ def ComponenteContinhasClientes(Request):
             "Continhas dos clientes",
             ConteudoPrincipal,
             RotaAtiva="continhas",
+            Request=Request,
         )
     )
 

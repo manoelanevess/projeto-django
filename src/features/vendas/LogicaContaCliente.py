@@ -5,6 +5,8 @@ from django.db import transaction
 from django.db.models import Q, Sum
 from django.utils import timezone
 
+from componentes.MascarasNumericas import NormalizarNumeroMascarado
+from componentes.NomesCadastro import NormalizarNomeCadastro
 from .models import ContaCliente, LancamentoContaCliente
 
 
@@ -12,7 +14,7 @@ Centavo = Decimal("0.01")
 
 
 def NormalizarNomeCliente(NomeCliente):
-    Nome = " ".join(str(NomeCliente or "").split())
+    Nome = NormalizarNomeCadastro(NomeCliente)
 
     if len(Nome) > 80:
         raise ValueError("O nome do cliente deve ter no máximo 80 caracteres.")
@@ -25,7 +27,9 @@ def NormalizarNomeCliente(NomeCliente):
 
 def ConverterValorConta(Valor):
     try:
-        ValorDecimal = Decimal(str(Valor).strip().replace(",", "."))
+        ValorDecimal = Decimal(NormalizarNumeroMascarado(Valor))
+        if not ValorDecimal.is_finite() or ValorDecimal.copy_abs() > Decimal("9999999999.99"):
+            raise ValueError
     except (InvalidOperation, TypeError, ValueError):
         raise ValueError("Informe um valor válido.") from None
 

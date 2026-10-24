@@ -22,7 +22,7 @@ from .FormularioProduto import FormularioEdicaoProduto, FormularioProduto
 from .LogicaCatalogoProduto import ExtrairDadosCatalogo
 from .LogicaCodigoBarras import EhCodigoGtin
 from .LogicaIdentificacaoProduto import GuardarIdentificacaoProduto, ObterIdentificacaoProduto
-from .models import IdentificacaoProduto, LoteEstoque, Produto
+from .models import CategoriaProduto, IdentificacaoProduto, LoteEstoque, Produto
 
 
 @ConfigurarTeste(COSMOS_API_TOKEN="token-teste", COSMOS_API_USER_AGENT="agente-teste", COSMOS_LIMITE_DIARIO=25)
@@ -100,6 +100,7 @@ class TesteCatalogoEan(SimpleTestCase):
         self.assertIsNone(RecusarRedirecionamento().redirect_request(None, None, 302, "", {}, "https://outro.example"))
 
 
+
 @ConfigurarTeste(COSMOS_API_TOKEN="token-teste", COSMOS_API_USER_AGENT="agente-teste",
                 OPENAI_API_KEY="chave-teste", PESQUISA_PRODUTO_IA_ATIVA=True)
 class TesteFluxoIdentificacaoProduto(TestCase):
@@ -131,7 +132,7 @@ class TesteFluxoIdentificacaoProduto(TestCase):
         Primeira = self.client.get("/estoque/consultar-codigo", {"codigo": self.Codigo}).json()
         Registro = IdentificacaoProduto.objects.get()
         self.assertFalse(Registro.Confirmada)
-        self.assertEqual(Primeira["Dados"], {"Nome": "Produto", "Marca": "marca"})
+        self.assertEqual(Primeira["Dados"], {"Nome": "Produto", "Marca": "Marca"})
         Cache.clear()
         Segunda = self.client.get("/estoque/consultar-codigo", {"codigo": self.Codigo.zfill(14)}).json()
         self.assertEqual(Segunda["Dados"], Primeira["Dados"])
@@ -148,7 +149,7 @@ class TesteFluxoIdentificacaoProduto(TestCase):
         self.assertTrue(Primeiro["PesquisaWebDisponivel"])
         self.ConsultarEan.return_value = self.CriarSugestao({"Nome": "Outro nome", "Marca": "MARCA"}, "Ean", CatalogoEan=True)
         Segundo = self.client.post("/estoque/complementar-codigo", {"codigo": self.Codigo}).json()
-        self.assertEqual(Segundo["Dados"], {"Nome": "Nome original", "Marca": "marca"})
+        self.assertEqual(Segundo["Dados"], {"Nome": "Nome Original", "Marca": "Marca"})
         self.assertFalse(Segundo["PesquisaWebDisponivel"])
         self.assertEqual([Fonte["Nome"] for Fonte in Segundo["Fontes"]], ["Publico", "Ean"])
         self.ConsultarWeb.assert_not_called()
@@ -160,7 +161,7 @@ class TesteFluxoIdentificacaoProduto(TestCase):
         self.assertTrue(Segundo["PesquisaWebDisponivel"])
         self.ConsultarWeb.return_value = self.CriarSugestao({"Nome": "Nome confirmado", "Marca": "Outra"}, "Web", PesquisaWeb=True)
         Terceiro = self.client.post("/estoque/pesquisar-codigo-web", {"codigo": self.Codigo}).json()
-        self.assertEqual(Terceiro["Dados"], {"Nome": "Nome confirmado", "Marca": "marca"})
+        self.assertEqual(Terceiro["Dados"], {"Nome": "Nome Confirmado", "Marca": "Marca"})
         self.assertTrue(Terceiro["Completo"])
         self.assertEqual(IdentificacaoProduto.objects.count(), 1)
 
@@ -173,7 +174,7 @@ class TesteFluxoIdentificacaoProduto(TestCase):
             for Rota in ("/estoque/complementar-codigo", "/estoque/pesquisar-codigo-web"):
                 with self.subTest(Situacao=Situacao, Rota=Rota):
                     Resultado = self.client.post(Rota, {"codigo": self.Codigo}).json()
-                    self.assertEqual(Resultado["Dados"], {"Nome": "Nome parcial"})
+                    self.assertEqual(Resultado["Dados"], {"Nome": "Nome Parcial"})
                     self.assertFalse(Resultado["Completo"])
 
     def test_ProdutoCompletoOuConfirmadoNaoGeraConsultasPagas(self):
@@ -222,6 +223,7 @@ class TesteFluxoIdentificacaoProduto(TestCase):
         self.assertFalse(Produto.objects.exists())
 
     def test_ConfirmacaoManualPrevaleceSobreSugestoesPosteriores(self):
+        CategoriaProduto.objects.create(Nome="Categoria manual")
         GuardarIdentificacaoProduto(self.Codigo, self.CriarSugestao({"Nome": "Sugestao", "Marca": "Marca"}))
         Resposta = self.client.post("/estoque/novo", {
             "Nome": "Nome corrigido", "Marca": "marca manual", "Categoria": "Categoria manual",
@@ -233,9 +235,9 @@ class TesteFluxoIdentificacaoProduto(TestCase):
         GuardarIdentificacaoProduto(self.Codigo, self.CriarSugestao({"Nome": "Internet", "Marca": "Outra"}))
         Registro = IdentificacaoProduto.objects.get()
         self.assertTrue(Registro.Confirmada)
-        self.assertEqual((Registro.Nome, Registro.Marca), ("Nome corrigido", "marca manual"))
+        self.assertEqual((Registro.Nome, Registro.Marca), ("Nome Corrigido", "Marca Manual"))
         self.assertEqual(Registro.Fontes, {})
-        self.assertEqual(Produto.objects.get().Categoria, "Categoria manual")
+        self.assertEqual(Produto.objects.get().Categoria, "Categoria Manual")
 
     def test_ConfirmacaoPreservaAtribuicaoDosCamposMantidos(self):
         Resultado = self.CriarSugestao({"Nome": "Produto", "Marca": "Marca"})
@@ -244,6 +246,7 @@ class TesteFluxoIdentificacaoProduto(TestCase):
         self.assertEqual(IdentificacaoProduto.objects.get().Fontes, {"Nome": Resultado["Fonte"], "Marca": Resultado["Fonte"]})
 
     def test_EdicaoAtualizaDadosConfirmadosENaoChamaApis(self):
+        CategoriaProduto.objects.create(Nome="Categoria")
         ProdutoLocal = Produto.objects.create(Nome="Produto", CodigoBarras=self.Codigo,
             Fornecedor=self.Fornecedor, PrecoVenda=Decimal("1"))
         Resposta = self.client.post(f"/estoque/{ProdutoLocal.pk}/editar", {
@@ -253,7 +256,7 @@ class TesteFluxoIdentificacaoProduto(TestCase):
         self.assertEqual(Resposta.status_code, 302)
         Registro = IdentificacaoProduto.objects.get()
         self.assertTrue(Registro.Confirmada)
-        self.assertEqual(Registro.Nome, "Nome editado")
+        self.assertEqual(Registro.Nome, "Nome Editado")
         self.ConsultarPublico.assert_not_called()
 
     def test_RotaComplementarExigeLoginPostECsrfECodigoValido(self):
@@ -396,6 +399,7 @@ class TestePesquisaWebProduto(SimpleTestCase):
                 Abrir.assert_called_once()
 
 
+
 @ConfigurarTeste(OPENAI_API_KEY="chave-de-teste", PESQUISA_PRODUTO_IA_ATIVA=True)
 class TesteRotaPesquisaWebProduto(TestCase):
     def setUp(self):
@@ -417,7 +421,7 @@ class TesteRotaPesquisaWebProduto(TestCase):
             "Fonte": {"Nome": "Loja", "Url": "https://loja.example/item", "PesquisaWeb": True},
         }) as Pesquisa:
             Resposta = self.client.post(self.Rota, {"codigo": self.Codigo})
-        self.assertEqual(Resposta.json()["Dados"]["Marca"], "pato")
+        self.assertEqual(Resposta.json()["Dados"]["Marca"], "Pato")
         self.assertIn("Confira", Resposta.json()["Mensagem"])
         self.assertIn("no-store", Resposta.headers["Cache-Control"])
         Pesquisa.assert_called_once_with(self.Codigo, self.Usuario.pk)
@@ -458,6 +462,7 @@ class TesteDadosCatalogo(SimpleTestCase):
                 self.assertEqual(Dados["Marca"], Marca.lower())
                 self.assertEqual(Dados["Nome"], "Nome Original")
         self.assertNotIn("Marca", ExtrairDadosCatalogo({"brands": "İ" * 80}))
+
 
 class TesteApiCatalogoProduto(SimpleTestCase):
     def test_PatoTemReferenciaComplementarSemConsultaExterna(self):
@@ -632,6 +637,7 @@ class TesteApiCatalogoProduto(SimpleTestCase):
                     self.assertEqual(ConsultarCatalogoProduto(self.Codigo)["Situacao"], "indisponivel")
 
 
+
 class TesteCadastroComCatalogo(TestCase):
     @classmethod
     def setUpTestData(cls):
@@ -656,7 +662,7 @@ class TesteCadastroComCatalogo(TestCase):
 
     def test_ConsultaSugereDadosSemSalvarProdutoOuLote(self):
         Resposta = self.client.get("/estoque/consultar-codigo", {"codigo": f" {self.Codigo} "})
-        self.assertEqual(Resposta.json()["Dados"], {"Nome": "Creme de avela", "Marca": "marca exemplo"})
+        self.assertEqual(Resposta.json()["Dados"], {"Nome": "Creme De Avela", "Marca": "Marca Exemplo"})
         self.Consultar.assert_called_once_with(self.Codigo)
         self.assertEqual(Produto.objects.count(), 0)
         self.assertEqual(LoteEstoque.objects.count(), 0)
@@ -725,17 +731,19 @@ class TesteCadastroComCatalogo(TestCase):
         self.assertFalse(Produto.objects.exists())
 
     def test_PostInvalidoPreservaValoresManuaisSemConsultaAutomatica(self):
+        CategoriaProduto.objects.create(Nome="Categoria corrigida")
         Resposta = self.client.post(f"/estoque/novo?codigo={self.Codigo}", {
             "Nome": "Nome corrigido", "Marca": "Marca corrigida", "Categoria": "Categoria corrigida",
             "CodigoBarras": self.Codigo, "DataValidade": "2028-12-31",
         })
-        for Valor in ("Nome corrigido", "Marca corrigida", "Categoria corrigida", "2028-12-31"):
+        for Valor in ("Nome corrigido", "Marca corrigida", "Categoria Corrigida", "2028-12-31"):
             self.assertContains(Resposta, f'value="{Valor}"')
         self.assertContains(Resposta, "if (false) ConsultarCodigo();")
         self.Consultar.assert_not_called()
         self.assertFalse(Produto.objects.exists())
 
     def test_CadastroConfirmadoUsaDadosManuaisEValidadeDoVendedor(self):
+        CategoriaProduto.objects.create(Nome="Categoria confirmada")
         Resposta = self.client.post("/estoque/novo", {
             "Nome": "Nome confirmado", "Marca": "Marca confirmada", "Categoria": "Categoria confirmada",
             "CodigoBarras": self.Codigo, "Fornecedor": self.Fornecedor.pk,
@@ -744,9 +752,9 @@ class TesteCadastroComCatalogo(TestCase):
         })
         self.assertRedirects(Resposta, "/estoque")
         ProdutoCriado = Produto.objects.get(CodigoBarras=self.Codigo)
-        self.assertEqual(ProdutoCriado.Nome, "Nome confirmado")
-        self.assertEqual(ProdutoCriado.Marca, "Marca confirmada")
-        self.assertEqual(ProdutoCriado.Categoria, "Categoria confirmada")
+        self.assertEqual(ProdutoCriado.Nome, "Nome Confirmado")
+        self.assertEqual(ProdutoCriado.Marca, "Marca Confirmada")
+        self.assertEqual(ProdutoCriado.Categoria, "Categoria Confirmada")
         self.assertEqual(ProdutoCriado.LotesEstoque.get().DataValidade.isoformat(), "2028-12-31")
         self.Consultar.assert_not_called()
 
@@ -787,7 +795,7 @@ class TesteValidadeLote(TestCase):
             DataValidade=self.Validade.isoformat(), CodigoBarras="0099999999999",
         ))
         self.assertRedirects(Resposta, "/estoque")
-        ProdutoCriado = Produto.objects.get(Nome="Novo produto com validade")
+        ProdutoCriado = Produto.objects.get(Nome="Novo Produto Com Validade")
         Lote = ProdutoCriado.LotesEstoque.get()
         self.assertEqual(Lote.DataValidade, self.Validade)
         self.assertEqual(Lote.Numero, 1)
@@ -798,7 +806,7 @@ class TesteValidadeLote(TestCase):
         self.assertIsNone(self.Produto.LotesEstoque.get().DataValidade)
         Resposta = self.client.post("/estoque/novo", self.DadosCadastro())
         self.assertRedirects(Resposta, "/estoque")
-        ProdutoCriado = Produto.objects.get(Nome="Novo produto com validade")
+        ProdutoCriado = Produto.objects.get(Nome="Novo Produto Com Validade")
         self.assertIsNone(ProdutoCriado.LotesEstoque.get().DataValidade)
         RespostaEntrada = self.client.post(
             f"/estoque/{self.Produto.pk}/editar", self.DadosEntrada()
@@ -851,7 +859,7 @@ class TesteValidadeLote(TestCase):
             DataValidade=self.Validade.isoformat(), Disponivel="on",
         ))
         self.assertRedirects(Resposta, "/estoque")
-        Tomate = Produto.objects.get(Nome="Tomate com validade")
+        Tomate = Produto.objects.get(Nome="Tomate Com Validade")
         LoteInicial = Tomate.LotesEstoque.get()
         self.assertEqual(LoteInicial.DataValidade, self.Validade)
         self.assertIsNone(LoteInicial.QuantidadeDisponivel)
@@ -955,6 +963,8 @@ class TesteManutencaoEstoque(TestCase):
             Nome="Hortifruti Silva",
             Cidade="Canoas",
         )
+        for NomeCategoria in ("Hortifruti", "Papelaria", "Alimentos"):
+            CategoriaProduto.objects.create(Nome=NomeCategoria)
         self.Arroz = Produto.objects.create(
             Nome="Arroz Branco",
             Categoria="Mercearia",
@@ -1012,7 +1022,7 @@ class TesteManutencaoEstoque(TestCase):
 
         self.assertContains(RespostaFornecedor, "Arroz Branco")
         self.assertContains(RespostaCategoria, "Arroz Branco")
-        self.assertContains(RespostaCategoria, "Sabor da Terra")
+        self.assertContains(RespostaCategoria, "Sabor Da Terra")
         self.assertContains(RespostaFiltroFornecedor, "Arroz Branco")
         self.assertContains(
             RespostaFiltroFornecedor,
@@ -1054,7 +1064,7 @@ class TesteManutencaoEstoque(TestCase):
         )
 
         self.assertRedirects(Resposta, "/estoque")
-        self.assertTrue(Produto.objects.filter(Nome="Caderno universitário").exists())
+        self.assertTrue(Produto.objects.filter(Nome="Caderno Universitário").exists())
 
     def test_CadastroNovoAbreFormularioAutenticadoSemAlterarEstoque(self):
         Resposta = self.client.get("/estoque/novo")
@@ -1076,10 +1086,10 @@ class TesteManutencaoEstoque(TestCase):
         Produto.objects.create(Nome="Água inativa", Ativo=False, Fornecedor=self.Distribuidora, PrecoVenda=Decimal("3.00"))
 
         Resposta = self.client.get("/estoque", {"busca": "  AGU  ", "inicio": "1"})
-        self.assertContains(Resposta, "Água mineral")
+        self.assertContains(Resposta, "Água Mineral")
         self.assertNotContains(Resposta, "Pacote Água")
-        self.assertNotContains(Resposta, "Outro produto")
-        self.assertNotContains(Resposta, "Água inativa")
+        self.assertNotContains(Resposta, "Outro Produto")
+        self.assertNotContains(Resposta, "Água Inativa")
         self.assertNotContains(Resposta, "Arroz Branco")
         self.assertEqual(Produto.objects.count(), 5)
 
@@ -1119,7 +1129,7 @@ class TesteManutencaoEstoque(TestCase):
             "QuantidadeEstoque": "5", "EstoqueMinimo": "1",
         })
         self.assertRedirects(Resposta, "/estoque")
-        self.assertEqual(Produto.objects.get(Nome="Feijao com codigo").CodigoBarras, "0012345678905")
+        self.assertEqual(Produto.objects.get(Nome="Feijao Com Codigo").CodigoBarras, "0012345678905")
         self.assertIsNone(self.Arroz.CodigoBarras)
 
     def test_CodigoDuplicadoERejeitadoNoFormularioENoBanco(self):
@@ -1132,7 +1142,7 @@ class TesteManutencaoEstoque(TestCase):
             "QuantidadeEstoque": "5", "EstoqueMinimo": "1",
         })
         self.assertContains(Resposta, "Este código de barras já está cadastrado em outro produto.")
-        self.assertFalse(Produto.objects.filter(Nome="Outro produto").exists())
+        self.assertFalse(Produto.objects.filter(Nome="Outro Produto").exists())
         with self.assertRaises(IntegrityError), transaction.atomic():
             Produto.objects.create(
                 Nome="Codigo repetido", CodigoBarras=self.Arroz.CodigoBarras,
@@ -1255,7 +1265,7 @@ class TesteManutencaoEstoque(TestCase):
 
         self.assertRedirects(Resposta, f"/estoque/{self.Arroz.id}/editar")
         self.Arroz.refresh_from_db()
-        self.assertEqual(self.Arroz.Nome, "Arroz Branco 1 kg")
+        self.assertEqual(self.Arroz.Nome, "Arroz Branco 1 Kg")
         self.assertEqual(self.Arroz.Categoria, "Alimentos")
         self.assertEqual(self.Arroz.PrecoCusto, Decimal("5.00"))
         self.assertEqual(self.Arroz.QuantidadeEstoque, Decimal("12.000"))

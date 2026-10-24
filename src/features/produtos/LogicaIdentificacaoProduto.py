@@ -4,6 +4,7 @@ from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone
 
+from componentes.NomesCadastro import NormalizarNomeCadastro
 from .LogicaCatalogoProduto import LimparTextoCatalogo
 from .LogicaCodigoBarras import EhCodigoGtin
 from .models import IdentificacaoProduto
@@ -35,8 +36,8 @@ def GuardarIdentificacaoProduto(Codigo, Resultado, Confirmada=False):
         return Resultado
     Dados = Resultado.get("Dados", {})
     Dados = {
-        "Nome": LimparTextoCatalogo(Dados.get("Nome"), 120),
-        "Marca": LimparTextoCatalogo(LimparTextoCatalogo(Dados.get("Marca"), 80).lower(), 80),
+        "Nome": LimparTextoCatalogo(NormalizarNomeCadastro(LimparTextoCatalogo(Dados.get("Nome"), 120)), 120),
+        "Marca": LimparTextoCatalogo(NormalizarNomeCadastro(LimparTextoCatalogo(Dados.get("Marca"), 80)), 80),
     }
     if not any(Dados.values()):
         Registro = ObterIdentificacaoProduto(Codigo)

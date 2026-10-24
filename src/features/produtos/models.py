@@ -7,10 +7,25 @@ from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
+from componentes.NomesCadastro import NomesCadastroMixin
 from .LogicaCodigoBarras import NormalizarCodigoBarras
 
 
-class IdentificacaoProduto(models.Model):
+class CategoriaProduto(NomesCadastroMixin, models.Model):
+    CamposNomesCadastro = ("Nome",)
+    Nome = models.CharField(max_length=80, unique=True)
+
+    class Meta:
+        ordering = ["Nome"]
+        verbose_name = "categoria de produto"
+        verbose_name_plural = "categorias de produtos"
+
+    def __str__(self):
+        return self.Nome
+
+
+class IdentificacaoProduto(NomesCadastroMixin, models.Model):
+    CamposNomesCadastro = ("Nome", "Marca")
     CodigoBarras = models.CharField(max_length=14, unique=True)
     Nome = models.CharField(max_length=120, blank=True)
     Marca = models.CharField(max_length=80, blank=True)
@@ -23,7 +38,8 @@ class IdentificacaoProduto(models.Model):
         verbose_name_plural = "identificacoes de produtos"
 
 
-class Produto(models.Model):
+class Produto(NomesCadastroMixin, models.Model):
+    CamposNomesCadastro = ("Nome", "Marca", "Categoria")
     UNIDADE = "unidade"
     QUILOGRAMA = "quilograma"
     METRO = "metro"
@@ -95,11 +111,7 @@ class Produto(models.Model):
         return self.Nome
 
     def save(self, *args, **kwargs):
-        NomeLimpo = " ".join(str(self.Nome).split())
         self.CodigoBarras = NormalizarCodigoBarras(self.CodigoBarras)
-
-        if NomeLimpo:
-            self.Nome = NomeLimpo[0].upper() + NomeLimpo[1:]
 
         super().save(*args, **kwargs)
 

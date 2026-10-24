@@ -11,6 +11,7 @@ from features.produtos.LogicaProduto import (
     GerarResumoProdutos,
 )
 from features.vendas.ApiVenda import BuscarVendasRecentes
+from features.vendas.ComponentePagamento import RenderizarDivisaoPagamento
 from features.vendas.LogicaVenda import (
     ConsolidarVendasDeMesesAnteriores,
     ObterResumoFinanceiro,
@@ -120,6 +121,7 @@ def RenderizarVendasRecentes(VendasRecentes):
             <tr class="LinhaDetalhesVenda" id="{IdDetalhes}" hidden>
                 <td colspan="5">
                     <div class="ConteudoDetalhesVenda">
+                        {RenderizarDivisaoPagamento(VendaRealizada)}
                         <strong>Itens da venda</strong>
                         {RenderizarItensVenda(VendaRealizada)}
                     </div>
@@ -133,8 +135,8 @@ def RenderizarVendasRecentes(VendasRecentes):
     if not LinhasVendas:
         return """
         <section class="EstadoVazio">
-            <h2>Nenhuma venda concluída neste mês</h2>
-            <p>As vendas concluídas aparecerão aqui.</p>
+            <h2>Nenhuma venda concluída neste dia comercial</h2>
+            <p>As vendas concluídas aparecerão aqui. A lista reinicia todos os dias às 7h.</p>
             <a class="BotaoPrimario" href="/carrinho">Abrir carrinho</a>
         </section>
         """
@@ -388,5 +390,5 @@ def ComponenteDashboard(Request):
     """
 
     return HttpResponse(
-        RenderizarLayoutBase("Dashboard", ConteudoPrincipal, RotaAtiva="dashboard")
+        RenderizarLayoutBase("Dashboard", ConteudoPrincipal, RotaAtiva="dashboard", Request=Request)
     )
