@@ -88,6 +88,126 @@ Crie a conta do proprietário:
 python manage.py createsuperuser
 ```
 
+## Rodando com Docker
+
+Adaptação da aula **Docker — Padronização de Ambiente e Preparação para Deploy** para Django: este projeto é uma MPA, com HTML gerado no servidor. Não existe frontend Node separado nem build de SPA. O mesmo `Dockerfile` possui os estágios `dev`, `build`, `prod` (Django com Gunicorn) e `web-prod` (Nginx com os arquivos estáticos do Django). O PostgreSQL roda em seu próprio serviço.
+
+Pré-requisito: Docker Engine com Compose v2 ou superior. No Windows, abra o Docker Desktop com contêineres Linux/WSL 2. A primeira construção precisa de internet para baixar imagens e dependências; não é necessário instalar Python ou PostgreSQL no computador.
+
+### 1. Preparar as variáveis
+
+Na raiz do repositório, no PowerShell:
+
+```powershell
+docker --version
+docker compose version
+powershell -ExecutionPolicy Bypass -File .\Docker\PrepararAmbiente.ps1
+```
+
+O script cria `.env.docker` a partir de `.env.docker.example`, com chave Django e senha do banco aleatórias, sem imprimir os segredos. Se o arquivo já existir, não o substitui. O `.env` usado fora do Docker permanece separado.
+
+Em Linux/macOS, copie `.env.docker.example` para `.env.docker` e preencha `DJANGO_SECRET_KEY` e `POSTGRES_PASSWORD` com segredos aleatórios antes de continuar. As credenciais de APIs são opcionais. Nunca versione `.env.docker` nem o envie com o trabalho. Não altere a senha depois de inicializar o volume sem também alterar a senha no PostgreSQL.
+
+### 2. Desenvolvimento com recarga automática
+
+```powershell
+docker compose up --build -d --wait
+docker compose exec app python manage.py createsuperuser
+```
+
+Abra [http://localhost:8000](http://localhost:8000). Crie o proprietário somente na primeira utilização desse banco. As migrations são aplicadas automaticamente antes de iniciar o servidor; a aplicação aguarda o banco ficar saudável. O código em `src` fica montado no contêiner e o `runserver` detecta alterações por polling, inclusive no Windows. Ao salvar um componente Python, atualize a página no navegador para ver a mudança. Ao alterar `requirements.txt`, reconstrua com `docker compose up --build -d --wait`.
+
+Comandos de rotina:
+
+```powershell
+docker compose logs -f app
+docker compose exec app sh
+docker compose exec app python manage.py check
+docker compose exec app python manage.py test configuracao features --noinput
+docker compose down
+docker compose up -d --wait
+```
+
+O banco começa vazio e fica no volume `estoque-dev_dados-postgres`. O PostgreSQL não publica uma porta no computador, evitando conflito com instalações existentes. Os dados atuais do comércio não são importados automaticamente.
+
+### 3. Produção local em localhost:8080
+
+```powershell
+docker compose -f compose.prod.yaml up --build -d --wait
+docker compose -f compose.prod.yaml exec app python manage.py createsuperuser
+```
+
+Abra [http://localhost:8080](http://localhost:8080). Esse ambiente usa outro volume, `estoque-prod_dados-postgres`; portanto, o proprietário e os cadastros de desenvolvimento não aparecem aqui. É possível manter ambos os ambientes rodando, pois usam nomes e portas diferentes.
+
+A imagem da aplicação executa Gunicorn como usuário sem privilégios. O Nginx também roda sem root, entrega `/static/` e encaminha as demais URLs para o Django, preservando acesso direto e F5 nas rotas internas. Não há volumes de código em produção. `GET /health` responde `200` quando a aplicação consegue consultar o PostgreSQL e `503` em caso de falha, sem expor credenciais; o Nginx só inicia depois de a aplicação ficar saudável. Todos os serviços de produção usam `restart: unless-stopped`.
+
+```powershell
+Invoke-RestMethod http://localhost:8080/health
+docker compose -f compose.prod.yaml ps
+docker compose -f compose.prod.yaml logs -f app web
+docker compose -f compose.prod.yaml down
+docker compose -f compose.prod.yaml up -d --wait
+```
+
+Este Compose simula produção **local** em HTTP, com `DEBUG=0` e acesso limitado a `127.0.0.1`. Para um deploy público, configure domínio e HTTPS no proxy, `DJANGO_ALLOWED_HOSTS` e `DJANGO_CSRF_TRUSTED_ORIGINS`, e ative cookies seguros, redirecionamento HTTPS e HSTS. Os valores HTTP do Compose local precisam ser ajustados nesse deploy.
+
+### 4. Persistência, backup e dados existentes
+
+`down` remove os contêineres, mas preserva o volume do PostgreSQL. **Não utilize `down -v` para parar o sistema: essa opção apaga o banco desse ambiente.** Volumes não substituem backups. Exemplo de backup da produção, sem passar dados binários por redirecionamento do PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Path .\backups -Force
+$NomeBackup = 'Estoque-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.backup'
+docker compose -f compose.prod.yaml exec banco sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom --no-owner --no-acl --file=/tmp/estoque.backup'
+if ($LASTEXITCODE -ne 0) { throw 'O backup falhou.' }
+docker compose -f compose.prod.yaml cp banco:/tmp/estoque.backup (Join-Path '.\backups' $NomeBackup)
+if ($LASTEXITCODE -ne 0) { throw 'A copia do backup falhou.' }
+```
+
+Para levar os dados já cadastrados no PostgreSQL fora do Docker, faça um `pg_dump` desse banco e restaure em um **volume novo, antes de iniciar a aplicação**. Não restaure sobre os cadastros de outro ambiente. Exemplo para um backup no formato custom, substituindo o caminho do arquivo:
+
+```powershell
+docker compose -f compose.prod.yaml up -d --wait banco
+docker compose -f compose.prod.yaml cp 'C:\TransferenciaEstoque\BancoComercio.backup' banco:/tmp/importacao.backup
+if ($LASTEXITCODE -ne 0) { throw 'A copia do backup falhou.' }
+docker compose -f compose.prod.yaml exec banco sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-acl --exit-on-error --single-transaction /tmp/importacao.backup'
+if ($LASTEXITCODE -ne 0) { throw 'A restauracao falhou. Nao inicie a aplicacao.' }
+docker compose -f compose.prod.yaml up --build -d --wait
+```
+
+O backup leva os usuários e suas senhas de login, produtos, fornecedores, vendas e fotos salvas no banco. Não é necessário criar outro proprietário após importar os dados. Teste o login e confira os registros restaurados antes de usar o sistema no comércio. Nenhuma restauração ou migração de dados reais faz parte da criação dos arquivos Docker.
+
+### 5. Conferência para a aula
+
+Os resultados dos testes, a auditoria dos sete itens dos slides e os tamanhos das imagens estão em [Docker/Auditoria.md](Docker/Auditoria.md).
+
+1. Suba desenvolvimento, faça um cadastro e altere um componente: o servidor recarrega ao salvar.
+2. Execute `down` e `up` e confirme que o cadastro continua lá.
+3. Suba produção, faça login, cadastre algo e abra uma rota interna diretamente, como `/estoque`, atualizando com F5.
+4. Confira `GET /health`, os serviços saudáveis e os usuários das imagens:
+
+```powershell
+docker compose config --quiet
+docker compose -f compose.prod.yaml config --quiet
+docker image inspect controle-estoque-app:prod --format '{{.Config.User}}'
+docker image inspect controle-estoque-web:prod --format '{{.Config.User}}'
+docker images --filter 'reference=controle-estoque-*'
+git status --short
+```
+
+As imagens usam versões explícitas de Python, Nginx e PostgreSQL, sem `latest`. `requirements.txt` é copiado antes do código para aproveitar o cache. `.dockerignore` exclui ambientes virtuais, `.env*`, Git, caches e backups. A imagem final Django conserva o código necessário à execução, mas não os testes; somente os estáticos coletados vão para o Nginx. Dependências de produção do contêiner ficam em `Docker/RequisitosProducao.txt`.
+
+Se a porta 8000 estiver ocupada, no PowerShell defina `$env:PORTA_DESENVOLVIMENTO = '8001'` antes de subir desenvolvimento e acesse `http://localhost:8001`. Mantenha essa variável ao executar novamente `up` nesse ambiente. Para produção, altere somente a porta do computador no Compose (à esquerda dos dois-pontos), mantendo o endereço `127.0.0.1`. Em falhas de inicialização, comece por `docker compose logs app banco` ou pelo equivalente com `-f compose.prod.yaml`. Não use `docker system prune` nem remova volumes para resolver um erro sem antes preservar os dados.
+
+## Testes e performance
+
+O plano, os comandos e os resultados da aula de testes estão em [TESTES.md](TESTES.md). As medições Lighthouse, o diagnóstico e o antes/depois da compressão estão em [PERFORMANCE.md](PERFORMANCE.md). O ambiente `compose.testes.yaml` usa PostgreSQL separado e a imagem `testes`, com coverage.py, sem instalar ferramentas na imagem de produção.
+
+```powershell
+docker compose -f compose.testes.yaml run --build --rm app
+docker compose -f compose.testes.yaml run --rm app python Testes/ProvaReal.py
+```
+
 ## Identificação de Produtos
 
 O cadastro consulta primeiro os produtos e as identificações salvas no PostgreSQL. Depois tenta os catálogos especializados e, se necessário e configurado, pesquisa a web com IA. Somente nome e marca são sugeridos; categoria, validade e dados do estoque são informados pelo vendedor. O cadastro só é concluído ao confirmar o formulário.

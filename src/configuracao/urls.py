@@ -3,6 +3,7 @@ from django.contrib import admin
 from django.contrib.auth.decorators import login_required as ExigirLogin
 from django.urls import path
 
+from .ComponenteSaude import ComponenteSaude
 from componentes.ComponenteErro import ComponentePaginaNaoEncontrada
 from features.estoque.ComponenteDashboard import ComponenteDashboard
 from features.estoque.ComponenteEstoque import ComponenteEstoque
@@ -49,6 +50,7 @@ from features.vendas.ComponenteLeitorCodigoBarras import ComponenteLerCodigoCarr
 ProtegerComponente = ExigirLogin(login_url="Login")
 
 urlpatterns = [
+    path("health", ComponenteSaude, name="Saude"),
     path("admin/", admin.site.urls),
     path("", ProtegerComponente(ComponentePaginaPrincipal), name="PaginaPrincipal"),
     path("login", ComponenteLogin, name="Login"),

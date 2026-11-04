@@ -1,0 +1,2 @@
+# Somente para a imagem Linux de producao; requirements.txt permanece portavel.
+gunicorn==26.2.0

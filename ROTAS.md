@@ -178,3 +178,7 @@ Referências técnicas: [pesquisa na web da OpenAI](https://developers.openai.co
 │      ││ tabela de vendas recentes                   │
 └──────┘└─────────────────────────────────────────────┘
 ```
+
+## Infraestrutura Docker
+
+`GET /health` é uma rota pública de prontidão, sem estado de tela nem dados de negócio. Consulta o PostgreSQL e retorna JSON com `status: ok` (HTTP 200) ou `status: indisponivel` (HTTP 503), sem detalhes da falha. Outros métodos retornam HTTP 405. Os healthchecks dos Composes usam essa rota.

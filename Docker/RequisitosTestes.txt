@@ -1,0 +1,2 @@
+# Autorizado para o conteiner de testes; fora da imagem de producao.
+coverage==7.17.1

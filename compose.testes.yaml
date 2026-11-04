@@ -1,0 +1,36 @@
+name: estoque-testes
+
+services:
+  banco:
+    image: postgres:18.6-alpine
+    env_file: .env.docker
+    volumes:
+      - dados-testes:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    image: controle-estoque-app:testes
+    build:
+      context: .
+      target: testes
+    env_file: .env.docker
+    environment:
+      POSTGRES_HOST: banco
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      DJANGO_DEBUG: "1"
+      DJANGO_SECURE_SSL_REDIRECT: "0"
+      APLICAR_MIGRACOES: "0"
+    volumes:
+      - ${PASTA_RELATORIOS:-./relatorios}:/relatorios
+    depends_on:
+      banco:
+        condition: service_healthy
+    command: ["python", "-m", "coverage", "run", "Testes/ExecutarSuite.py", "test", "configuracao", "features", "--noinput", "--shuffle=20261104"]
+
+volumes:
+  dados-testes:

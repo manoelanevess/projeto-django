@@ -1,0 +1,63 @@
+name: estoque-prod
+
+services:
+  banco:
+    image: postgres:18.6-alpine
+    env_file: .env.docker
+    volumes:
+      - dados-postgres:/var/lib/postgresql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  app:
+    image: controle-estoque-app:prod
+    build:
+      context: .
+      target: prod
+    env_file: .env.docker
+    environment:
+      POSTGRES_HOST: banco
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      DJANGO_DEBUG: "0"
+      # Simulação local por HTTP. No deploy público, usar HTTPS e cookies seguros.
+      DJANGO_SECURE_SSL_REDIRECT: "0"
+      DJANGO_SECURE_HSTS_SECONDS: "0"
+      DJANGO_SESSION_COOKIE_SECURE: "0"
+      DJANGO_CSRF_COOKIE_SECURE: "0"
+    restart: unless-stopped
+    depends_on:
+      banco:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  web:
+    image: controle-estoque-web:prod
+    build:
+      context: .
+      target: web-prod
+    ports:
+      - "127.0.0.1:8080:8080"
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  dados-postgres:

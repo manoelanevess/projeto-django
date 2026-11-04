@@ -1,0 +1,9 @@
+# Usar junto de compose.prod.yaml e com -p estoque-diagnostico.
+# A porta 8080 continua disponivel para a producao do usuario.
+services:
+  app:
+    environment:
+      AMBIENTE_DIAGNOSTICO: "1"
+  web:
+    ports: !override
+      - "127.0.0.1:8082:8080"

@@ -6,6 +6,15 @@ __pycache__/
 .env
 .env.*
 !.env.example
+!.env.docker.example
+*.backup
+*.dump
+backups/
 staticfiles/
 .vscode/
 .idea/
+relatorios/
+.coverage
+.coverage.*
+htmlcov/
+node_modules/

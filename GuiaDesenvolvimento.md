@@ -68,3 +68,26 @@ python manage.py migrate
 ## Contexto de roteamento
 
 Django usa roteamento baseado em configuração. As rotas ficam em `src/configuracao/urls.py`; cada rota deve chamar um componente dentro da feature correspondente.
+
+## Docker
+
+- Manter o `Dockerfile` na raiz, com estágios `dev`, `build`, `prod` e `web-prod`. Django é uma MPA: não criar frontend Node nem fallback de SPA para este projeto.
+- `compose.yaml` é o ambiente de desenvolvimento, com código montado e recarga automática; `compose.prod.yaml` simula produção local em `http://localhost:8080`, com Gunicorn e Nginx, sem volumes de código.
+- Fixar versões das imagens, copiar requisitos antes do código e executar aplicação e proxy sem root. Não adicionar a chave obsoleta `version` aos arquivos Compose.
+- Segredos entram em tempo de execução por `.env.docker`, que deve ficar fora do Git e do contexto de build. Versionar somente `.env.docker.example`, sem segredos. Não reutilizar nem alterar o `.env` do ambiente nativo para subir Docker.
+- PostgreSQL 18 usa volume em `/var/lib/postgresql`. Manter volumes separados para desenvolvimento e produção e nunca publicar a porta do banco por padrão. Não trocar PostgreSQL por SQLite.
+- Aplicar migrations antes de iniciar o servidor, aguardar banco saudável e manter `GET /health` sem autenticação, consultando o banco e retornando 503 sem detalhes sensíveis se ele falhar.
+- As exceções de cookies e redirecionamento HTTPS nos Composes valem para a simulação local em HTTP. Em deploy público, usar HTTPS e os padrões seguros; não alterar os padrões de produção de `settings.py` para acomodar testes locais.
+- Gunicorn foi autorizado para o Docker e fica em `Docker/RequisitosProducao.txt`; não instalar no ambiente virtual Windows. Dependências adicionais continuam exigindo consulta prévia.
+- Documentar os comandos e a persistência no README. Não executar `down -v`, apagar volumes ou importar dados reais como parte de testes rotineiros.
+
+## Testes e diagnóstico
+
+- Manter o plano em `TESTES.md` e as medições em `PERFORMANCE.md`, adaptando exemplos de outras stacks ao Django MPA.
+- A imagem `testes` e `compose.testes.yaml` têm PostgreSQL e volume próprios. O runner cria banco `test_...`; nunca utilizar dados do comércio como fixture.
+- coverage.py foi autorizado somente para a imagem de testes; Lighthouse foi autorizado como ferramenta de diagnóstico, com dependências em `Testes/package.json`. Não levá-los à imagem de produção.
+- Manter provas de mutação apenas em contêiner descartável, restaurar o código e conferir o hash. Nunca modificar código no host ou na produção para provocar falha.
+- O fluxo de navegador usa rótulos, textos e atributos semânticos, sem esperas fixas. A execução de HTML nos testes Django não substitui testes de JavaScript no navegador.
+- Medir performance em produção, página autenticada, cache controlado e três rodadas em condições iguais. Informar mediana, variação e limites; não chamar TBT de INP nem dados de laboratório de dados reais de usuários.
+- `Testes/ComposeDiagnostico.yaml` cria uma cópia isolada em 8082. Exigir `AMBIENTE_DIAGNOSTICO=1` antes de criar os dados sintéticos. Guardar credenciais e relatórios em `relatorios/`, fora do Git e do build.
+- A compressão HTTP usa `GZipMiddleware` nativo do Django, com negociação de conteúdo e proteção HTB. Preservar os testes de login e CSRF ao alterá-la.

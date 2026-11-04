@@ -1,0 +1,8 @@
+{
+  "name": "diagnostico-controle-estoque",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "lighthouse": "13.6.0"
+  }
+}
