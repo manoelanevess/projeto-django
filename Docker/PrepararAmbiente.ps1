@@ -23,6 +23,7 @@ $CaminhoExemplo = Join-Path $PastaProjeto '.env.docker.example'
 $Conteudo = [System.IO.File]::ReadAllText($CaminhoExemplo)
 $Conteudo = $Conteudo.Replace('DJANGO_SECRET_KEY=', ('DJANGO_SECRET_KEY=' + (GerarSegredo)))
 $Conteudo = $Conteudo.Replace('POSTGRES_PASSWORD=', ('POSTGRES_PASSWORD=' + (GerarSegredo)))
+$Conteudo = $Conteudo.Replace('DJANGO_SUPERUSER_PASSWORD=', ('DJANGO_SUPERUSER_PASSWORD=' + (GerarSegredo)))
 $Codificacao = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($CaminhoDestino, $Conteudo, $Codificacao)
 Write-Output '.env.docker criado com segredos aleatorios. O .env do ambiente atual foi preservado.'

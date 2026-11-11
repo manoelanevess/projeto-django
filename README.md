@@ -104,9 +104,9 @@ docker compose version
 powershell -ExecutionPolicy Bypass -File .\Docker\PrepararAmbiente.ps1
 ```
 
-O script cria `.env.docker` a partir de `.env.docker.example`, com chave Django e senha do banco aleatórias, sem imprimir os segredos. Se o arquivo já existir, não o substitui. O `.env` usado fora do Docker permanece separado.
+O script cria `.env.docker` a partir de `.env.docker.example`, com chave Django, senha do banco e senha aleatória para o administrador, sem imprimir os segredos. Se o arquivo já existir, não o substitui. O `.env` usado fora do Docker permanece separado. Proteja esse arquivo e consulte nele a senha inicial do administrador.
 
-Em Linux/macOS, copie `.env.docker.example` para `.env.docker` e preencha `DJANGO_SECRET_KEY` e `POSTGRES_PASSWORD` com segredos aleatórios antes de continuar. As credenciais de APIs são opcionais. Nunca versione `.env.docker` nem o envie com o trabalho. Não altere a senha depois de inicializar o volume sem também alterar a senha no PostgreSQL.
+Em Linux/macOS, copie `.env.docker.example` para `.env.docker` e preencha `DJANGO_SECRET_KEY`, `POSTGRES_PASSWORD` e `DJANGO_SUPERUSER_PASSWORD` com segredos aleatórios antes de continuar. Ajuste também `DJANGO_SUPERUSER_USERNAME` e `DJANGO_SUPERUSER_EMAIL` se desejar. As credenciais de APIs são opcionais. Nunca versione `.env.docker` nem o envie com o trabalho. Não altere a senha depois de inicializar o volume sem também alterar a senha no PostgreSQL.
 
 ### 2. Desenvolvimento com recarga automática
 
@@ -134,10 +134,9 @@ O banco começa vazio e fica no volume `estoque-dev_dados-postgres`. O PostgreSQ
 
 ```powershell
 docker compose -f compose.prod.yaml up --build -d --wait
-docker compose -f compose.prod.yaml exec app python manage.py createsuperuser
 ```
 
-Abra [http://localhost:8080](http://localhost:8080). Esse ambiente usa outro volume, `estoque-prod_dados-postgres`; portanto, o proprietário e os cadastros de desenvolvimento não aparecem aqui. É possível manter ambos os ambientes rodando, pois usam nomes e portas diferentes.
+Na primeira inicialização, o contêiner aplica as migrations e cria automaticamente o superusuário definido em `.env.docker`. Nas reinicializações, mantém a conta existente sem alterar sua senha ou permissões. Abra [http://localhost:8080](http://localhost:8080) e entre com as credenciais configuradas. Esse ambiente usa outro volume, `estoque-prod_dados-postgres`; portanto, o proprietário e os cadastros de desenvolvimento não aparecem aqui. É possível manter ambos os ambientes rodando, pois usam nomes e portas diferentes.
 
 A imagem da aplicação executa Gunicorn como usuário sem privilégios. O Nginx também roda sem root, entrega `/static/` e encaminha as demais URLs para o Django, preservando acesso direto e F5 nas rotas internas. Não há volumes de código em produção. `GET /health` responde `200` quando a aplicação consegue consultar o PostgreSQL e `503` em caso de falha, sem expor credenciais; o Nginx só inicia depois de a aplicação ficar saudável. Todos os serviços de produção usam `restart: unless-stopped`.
 
