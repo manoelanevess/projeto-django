@@ -139,17 +139,29 @@ def ObterScriptMascarasNumericas():
                 } else {
                     const Limite = Precisao(Campo);
                     const Limpo = Original.replace(/[^\d,]/g, "");
-                    const [Inteiros, ...Fracoes] = Limpo.split(",");
-                    const ParteInteira = Inteiros.replace(/^0+(?=\d)/, "");
-                    const Casas = Fracoes.join("").slice(0, Limite);
-                    Texto = Limite ? ParteInteira.replace(/\B(?=(\d{3})+(?!\d))/g, ".") : ParteInteira;
-                    if (Limpo && Limite && (CompletarCasas || Limpo.includes(","))) {
-                        Texto = (Texto || "0") + "," + (CompletarCasas ? Casas.padEnd(Limite, "0") : Casas);
+                    if (Campo.dataset.mascara === "moeda") {
+                        const Digitos = Original.replace(/\D/g, "");
+                        const Centavos = Digitos.padStart(3, "0");
+                        const Reais = Centavos.slice(0, -2).replace(/^0+(?=\d)/, "");
+                        Texto = Digitos ? Reais.replace(/\B(?=(\d{3})+(?!\d))/g, ".") + "," + Centavos.slice(-2) : "";
+                    } else {
+                        const [Inteiros, ...Fracoes] = Limpo.split(",");
+                        const ParteInteira = Inteiros.replace(/^0+(?=\d)/, "");
+                        const Casas = Fracoes.join("").slice(0, Limite);
+                        Texto = Limite ? ParteInteira.replace(/\B(?=(\d{3})+(?!\d))/g, ".") : ParteInteira;
+                        if (Limpo && Limite && (CompletarCasas || Limpo.includes(","))) {
+                            Texto = (Texto || "0") + "," + (CompletarCasas ? Casas.padEnd(Limite, "0") : Casas);
+                        }
                     }
                     if (Posicao === 0 && Limpo.startsWith(",") && !/[1-9]/.test(Limpo)) Texto = "";
                 }
                 Campo.value = Texto;
                 if (document.activeElement === Campo) {
+                    if (Campo.dataset.mascara === "moeda") {
+                        Campo.setSelectionRange(Texto.length, Texto.length);
+                        Validar(Campo);
+                        return;
+                    }
                     let Contagem = 0;
                     let Cursor = 0;
                     const ZerosRemovidos = Campo.dataset.mascara === "telefone" ? 0 : (Original.replace(/[^\d,]/g, "").split(",")[0].match(/^0+(?=\d)/)?.[0].length || 0);
@@ -191,6 +203,10 @@ def ObterScriptMascarasNumericas():
                 const Campo = Evento.target;
                 if (!Campo.matches?.(Seletor) || Campo.dataset.mascara === "telefone" || ![".", ","].includes(Evento.data)) return;
                 Evento.preventDefault();
+                if (Campo.dataset.mascara === "moeda") {
+                    Campo.setSelectionRange(Campo.value.length, Campo.value.length);
+                    return;
+                }
                 if (!Precisao(Campo)) return;
                 const Separador = Campo.value.indexOf(",");
                 if (Separador >= 0) Campo.setSelectionRange(Separador + 1, Separador + 1);
