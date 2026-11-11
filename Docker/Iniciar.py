@@ -21,6 +21,12 @@ def Iniciar():
     if os.environ.get("DJANGO_CRIAR_SUPERUSUARIO_AUTOMATICO", "0") == "1":
         CriarSuperusuario()
 
+    if os.environ.get("DJANGO_CARREGAR_DADOS_DEMO", "0") == "1":
+        subprocess.run(
+            [sys.executable, "manage.py", "carregar_dados_demo"],
+            check=True,
+        )
+
     os.execvp(sys.argv[1], sys.argv[1:])
 
 

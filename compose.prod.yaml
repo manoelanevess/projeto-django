@@ -26,6 +26,7 @@ services:
       POSTGRES_SSLMODE: disable
       DJANGO_DEBUG: "0"
       DJANGO_CRIAR_SUPERUSUARIO_AUTOMATICO: "1"
+      DJANGO_CARREGAR_DADOS_DEMO: "1"
       # Simulação local por HTTP. No deploy público, usar HTTPS e cookies seguros.
       DJANGO_SECURE_SSL_REDIRECT: "0"
       DJANGO_SECURE_HSTS_SECONDS: "0"

@@ -117,6 +117,8 @@ docker compose exec app python manage.py createsuperuser
 
 Abra [http://localhost:8000](http://localhost:8000). Crie o proprietário somente na primeira utilização desse banco. As migrations são aplicadas automaticamente antes de iniciar o servidor; a aplicação aguarda o banco ficar saudável. O código em `src` fica montado no contêiner e o `runserver` detecta alterações por polling, inclusive no Windows. Ao salvar um componente Python, atualize a página no navegador para ver a mudança. Ao alterar `requirements.txt`, reconstrua com `docker compose up --build -d --wait`.
 
+No primeiro início com um banco vazio, os ambientes Docker carregam fornecedores, categorias e produtos fictícios para demonstração. O carregamento é feito pelo comando `carregar_dados_demo`. Se já houver qualquer categoria, fornecedor ou produto, o comando não insere dados. Para produção real, desative a variável de carga de demonstração conforme a orientação abaixo.
+
 Comandos de rotina:
 
 ```powershell
@@ -136,7 +138,7 @@ O banco começa vazio e fica no volume `estoque-dev_dados-postgres`. O PostgreSQ
 docker compose -f compose.prod.yaml up --build -d --wait
 ```
 
-Na primeira inicialização, o contêiner aplica as migrations e cria automaticamente o superusuário definido em `.env.docker`. Nas reinicializações, mantém a conta existente sem alterar sua senha ou permissões. Abra [http://localhost:8080](http://localhost:8080) e entre com as credenciais configuradas. Esse ambiente usa outro volume, `estoque-prod_dados-postgres`; portanto, o proprietário e os cadastros de desenvolvimento não aparecem aqui. É possível manter ambos os ambientes rodando, pois usam nomes e portas diferentes.
+Na primeira inicialização, o contêiner aplica as migrations, cria o superusuário definido em `.env.docker` e carrega dados fictícios de demonstração se o banco ainda não tiver nenhuma categoria, fornecedor ou produto. Em reinicializações, não duplica nem altera esses cadastros. **Não use essa opção em um banco vazio destinado a dados reais**; para um deploy real, remova `DJANGO_CARREGAR_DADOS_DEMO: "1"` de `compose.prod.yaml` antes de subir. Abra [http://localhost:8080](http://localhost:8080) e entre com as credenciais configuradas. Esse ambiente usa outro volume, `estoque-prod_dados-postgres`; portanto, o proprietário e os cadastros de desenvolvimento não aparecem aqui. É possível manter ambos os ambientes rodando, pois usam nomes e portas diferentes.
 
 A imagem da aplicação executa Gunicorn como usuário sem privilégios. O Nginx também roda sem root, entrega `/static/` e encaminha as demais URLs para o Django, preservando acesso direto e F5 nas rotas internas. Não há volumes de código em produção. `GET /health` responde `200` quando a aplicação consegue consultar o PostgreSQL e `503` em caso de falha, sem expor credenciais; o Nginx só inicia depois de a aplicação ficar saudável. Todos os serviços de produção usam `restart: unless-stopped`.
 
