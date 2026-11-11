@@ -123,7 +123,7 @@ def ObterScriptMascarasNumericas():
                     Campo.dataset.erroMascara = Erro;
                 }
             };
-            const Formatar = (Campo) => {
+            const Formatar = (Campo, CompletarCasas = document.activeElement !== Campo) => {
                 const Original = Campo.value;
                 const Posicao = Campo.selectionStart ?? Original.length;
                 const Antes = Original.slice(0, Posicao).replace(/[^\d,]/g, "");
@@ -143,7 +143,9 @@ def ObterScriptMascarasNumericas():
                     const ParteInteira = Inteiros.replace(/^0+(?=\d)/, "");
                     const Casas = Fracoes.join("").slice(0, Limite);
                     Texto = Limite ? ParteInteira.replace(/\B(?=(\d{3})+(?!\d))/g, ".") : ParteInteira;
-                    if (Limpo && Limite) Texto = (Texto || "0") + "," + Casas.padEnd(Limite, "0");
+                    if (Limpo && Limite && (CompletarCasas || Limpo.includes(","))) {
+                        Texto = (Texto || "0") + "," + (CompletarCasas ? Casas.padEnd(Limite, "0") : Casas);
+                    }
                     if (Posicao === 0 && Limpo.startsWith(",") && !/[1-9]/.test(Limpo)) Texto = "";
                 }
                 Campo.value = Texto;
@@ -183,7 +185,7 @@ def ObterScriptMascarasNumericas():
                 Formatar(Campo);
             }, true);
             document.addEventListener("focusout", (Evento) => {
-                if (Evento.target.matches?.(Seletor)) Formatar(Evento.target);
+                if (Evento.target.matches?.(Seletor)) Formatar(Evento.target, true);
             }, true);
             document.addEventListener("beforeinput", (Evento) => {
                 const Campo = Evento.target;
